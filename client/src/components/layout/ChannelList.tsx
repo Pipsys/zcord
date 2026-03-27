@@ -14,6 +14,9 @@ interface ChannelListProps {
   onLeaveVoice: () => void;
   onCreateTextChannel: () => void;
   onCreateVoiceChannel: () => void;
+  onInvite: () => void;
+  onOpenServerSettings: () => void;
+  canManageServer: boolean;
   isCreatingChannel: boolean;
 }
 
@@ -38,6 +41,9 @@ export const ChannelList = ({
   onLeaveVoice,
   onCreateTextChannel,
   onCreateVoiceChannel,
+  onInvite,
+  onOpenServerSettings,
+  canManageServer,
   isCreatingChannel,
 }: ChannelListProps) => {
   const { t } = useI18n();
@@ -80,8 +86,37 @@ export const ChannelList = ({
   return (
     <section className="flex h-full w-60 flex-col border-r border-white/10 bg-black/20 backdrop-blur-sm">
       <header className="h-12 border-b border-white/10 px-4">
-        <div className="flex h-full items-center justify-between">
-          <h2 className="truncate text-[15px] font-semibold text-paw-text-primary">{server?.name ?? "Server"}</h2>
+        <div className="flex h-full items-center">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="truncate text-[15px] font-semibold text-paw-text-primary">{server?.name ?? "Server"}</h2>
+            <button
+              type="button"
+              onClick={onInvite}
+              className="rounded-md border border-white/14 bg-black/25 px-2.5 py-1 text-xs font-semibold text-paw-text-secondary transition hover:border-white/22 hover:bg-black/35 hover:text-paw-text-primary"
+            >
+              {t("server.invite_button")}
+            </button>
+            {canManageServer ? (
+              <button
+                type="button"
+                title={t("server.settings_button")}
+                aria-label={t("server.settings_button")}
+                onClick={onOpenServerSettings}
+                className="grid h-7 w-7 place-items-center rounded-md border border-white/14 bg-black/25 text-paw-text-secondary transition hover:border-white/22 hover:bg-black/35 hover:text-paw-text-primary"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
+                  <path
+                    d="M10.325 4.317a1 1 0 0 1 1.35-.936l.887.355a1 1 0 0 0 .876-.03l.85-.425a1 1 0 0 1 1.325.486l.41.82a1 1 0 0 0 .687.53l.908.181a1 1 0 0 1 .79 1.16l-.15.914a1 1 0 0 0 .22.848l.602.704a1 1 0 0 1 0 1.302l-.602.704a1 1 0 0 0-.22.848l.15.914a1 1 0 0 1-.79 1.16l-.908.182a1 1 0 0 0-.687.53l-.41.82a1 1 0 0 1-1.325.486l-.85-.426a1 1 0 0 0-.876-.03l-.887.355a1 1 0 0 1-1.35-.936v-.955a1 1 0 0 0-.493-.863l-.83-.488a1 1 0 0 1-.366-1.366l.488-.83a1 1 0 0 0 0-1.006l-.488-.83a1 1 0 0 1 .366-1.366l.83-.488a1 1 0 0 0 .493-.863v-.955Z"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="12" cy="12" r="2.25" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from app.models.user import UserStatus
 from app.schemas.base import StrictSchema
 
 
@@ -34,3 +35,12 @@ class ServerRead(StrictSchema):
     is_nsfw: bool
     max_members: int
     created_at: datetime
+
+
+class ServerMemberRead(StrictSchema):
+    user_id: UUID
+    username: str
+    nickname: str | None
+    avatar_url: str | None
+    status: UserStatus
+    joined_at: datetime

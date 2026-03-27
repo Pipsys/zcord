@@ -9,6 +9,8 @@ interface Toast {
   description: string;
 }
 
+const MAX_TOASTS_VISIBLE = 3;
+
 const applyTheme = (): void => {
   if (typeof document === "undefined") {
     return;
@@ -46,6 +48,9 @@ export const useUiStore = create<UiState>((set) => ({
         }
         shouldNotify = true;
         state.toasts.push({ id: crypto.randomUUID(), title, description });
+        if (state.toasts.length > MAX_TOASTS_VISIBLE) {
+          state.toasts = state.toasts.slice(-MAX_TOASTS_VISIBLE);
+        }
       }),
     );
     if (shouldNotify) {

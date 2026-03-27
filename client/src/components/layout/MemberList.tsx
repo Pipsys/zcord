@@ -1,46 +1,42 @@
-﻿import { useMemo } from "react";
+import { useMemo } from "react";
 
+import { useServerMembersQuery } from "@/api/queries";
 import { Avatar } from "@/components/ui/Avatar";
 import { useI18n } from "@/i18n/provider";
-import { useAuthStore } from "@/store/authStore";
-import { useChannelStore } from "@/store/channelStore";
-import { useMessageStore } from "@/store/messageStore";
+import { useServerStore } from "@/store/serverStore";
 
 interface MemberItem {
   id: string;
   name: string;
+  subtitle: string;
   online: boolean;
   avatarUrl?: string | null;
 }
 
-const buildLabel = (id: string): string => `user-${id.slice(0, 6)}`;
-
 export const MemberList = () => {
   const { t } = useI18n();
-  const user = useAuthStore((state) => state.user);
-  const activeChannelId = useChannelStore((state) => state.activeChannelId);
-  const messagesByChannel = useMessageStore((state) => state.byChannel);
+  const activeServerId = useServerStore((state) => state.activeServerId);
+  const { data: serverMembers } = useServerMembersQuery(activeServerId);
 
   const members = useMemo<MemberItem[]>(() => {
-    const list: MemberItem[] = [];
-    const seen = new Set<string>();
-
-    if (user?.id) {
-      list.push({ id: user.id, name: user.username, online: true, avatarUrl: user.avatar_url });
-      seen.add(user.id);
+    if (!Array.isArray(serverMembers)) {
+      return [];
     }
 
-    const channelMessages = activeChannelId ? messagesByChannel[activeChannelId] ?? [] : [];
-    for (const message of channelMessages) {
-      if (!seen.has(message.author_id)) {
-        const authorName = message.author_username?.trim() || buildLabel(message.author_id);
-        list.push({ id: message.author_id, name: authorName, online: true, avatarUrl: message.author_avatar_url ?? null });
-        seen.add(message.author_id);
-      }
-    }
+    return serverMembers.map((member) => {
+      const trimmedNickname = member.nickname?.trim();
+      const name = trimmedNickname && trimmedNickname.length > 0 ? trimmedNickname : member.username;
+      const online = member.status !== "invisible";
 
-    return list;
-  }, [activeChannelId, messagesByChannel, user?.id, user?.username]);
+      return {
+        id: member.user_id,
+        name,
+        subtitle: online ? t("members.group_online") : t("members.group_offline"),
+        online,
+        avatarUrl: member.avatar_url,
+      };
+    });
+  }, [serverMembers, t]);
 
   return (
     <aside className="hidden h-full w-60 border-l border-white/10 bg-black/20 px-2 py-3 backdrop-blur-sm xl:block">
@@ -54,7 +50,7 @@ export const MemberList = () => {
             <Avatar src={member.avatarUrl} label={member.name} online={member.online} size="sm" />
             <div className="min-w-0">
               <p className="truncate text-sm text-paw-text-secondary">{member.name}</p>
-              <p className="truncate text-[11px] text-paw-text-muted">{member.id.slice(0, 8)}</p>
+              <p className="truncate text-[11px] text-paw-text-muted">{member.subtitle}</p>
             </div>
           </div>
         ))}

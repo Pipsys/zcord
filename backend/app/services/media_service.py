@@ -23,6 +23,18 @@ ALLOWED_AVATAR_MIME_TYPES = {
     "image/jpeg": "jpg",
     "image/gif": "gif",
 }
+SERVER_ICON_MAX_BYTES = 10 * 1024 * 1024
+ALLOWED_SERVER_ICON_MIME_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+}
+SERVER_BANNER_MAX_BYTES = 15 * 1024 * 1024
+ALLOWED_SERVER_BANNER_MIME_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+}
 
 def _is_supported_mime_type(value: str) -> bool:
     if not value:
@@ -169,12 +181,88 @@ class MediaService:
 
         return object_key
 
+    async def upload_server_icon(self, server_id: uuid.UUID, upload_file: UploadFile) -> str:
+        if upload_file.size and upload_file.size > SERVER_ICON_MAX_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server icon exceeds 10MB")
+
+        payload = await upload_file.read()
+        if len(payload) > SERVER_ICON_MAX_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server icon exceeds 10MB")
+
+        guessed = magic.from_buffer(payload[:2048], mime=True)
+        content_type = guessed or upload_file.content_type or ""
+        extension = ALLOWED_SERVER_ICON_MIME_TYPES.get(content_type)
+        if extension is None:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported server icon type. Allowed: PNG, JPG, GIF",
+            )
+
+        try:
+            with Image.open(io.BytesIO(payload)) as image:
+                image.verify()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Invalid image payload") from exc
+
+        object_key = f"server-icons/{server_id}/{uuid.uuid4()}.{extension}"
+        self.ensure_bucket()
+        try:
+            self.client.put_object(
+                settings.minio_bucket,
+                object_key,
+                io.BytesIO(payload),
+                length=len(payload),
+                content_type=content_type,
+            )
+        except S3Error as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Storage temporarily unavailable") from exc
+
+        return object_key
+
+    async def upload_server_banner(self, server_id: uuid.UUID, upload_file: UploadFile) -> str:
+        if upload_file.size and upload_file.size > SERVER_BANNER_MAX_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server banner exceeds 15MB")
+
+        payload = await upload_file.read()
+        if len(payload) > SERVER_BANNER_MAX_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server banner exceeds 15MB")
+
+        guessed = magic.from_buffer(payload[:2048], mime=True)
+        content_type = guessed or upload_file.content_type or ""
+        extension = ALLOWED_SERVER_BANNER_MIME_TYPES.get(content_type)
+        if extension is None:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported server banner type. Allowed: PNG, JPG, GIF",
+            )
+
+        try:
+            with Image.open(io.BytesIO(payload)) as image:
+                image.verify()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Invalid image payload") from exc
+
+        object_key = f"server-banners/{server_id}/{uuid.uuid4()}.{extension}"
+        self.ensure_bucket()
+        try:
+            self.client.put_object(
+                settings.minio_bucket,
+                object_key,
+                io.BytesIO(payload),
+                length=len(payload),
+                content_type=content_type,
+            )
+        except S3Error as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Storage temporarily unavailable") from exc
+
+        return object_key
+
     def resolve_public_url(self, stored_value: str | None) -> str | None:
         if not stored_value:
             return None
         if "://" in stored_value:
             return stored_value
-        if stored_value.startswith("avatars/"):
+        if stored_value.startswith(("avatars/", "server-icons/", "server-banners/")):
             return self.presigned_download_url(stored_value, expires_seconds=7 * 24 * 60 * 60)
         return self.presigned_download_url(stored_value)
 

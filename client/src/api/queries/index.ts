@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { del, get, patch, post, uploadAttachments } from "@/api/client";
+import { del, get, patch, post, uploadAttachments, uploadServerBanner, uploadServerIcon } from "@/api/client";
 import type { UploadProgressEvent } from "@/api/client";
-import type { Channel, FriendRelation, Message, Server, User } from "@/types";
+import type { Channel, FriendRelation, Message, Server, ServerMember, User } from "@/types";
 
 export const useMeQuery = () => useQuery({ queryKey: ["me"], queryFn: () => get<User>("/users/me") });
 
@@ -17,6 +17,14 @@ export const useChannelsQuery = (serverId: string | null) =>
     queryKey: ["channels", serverId],
     queryFn: () => get<Channel[]>(`/channels${serverId ? `?server_id=${serverId}` : ""}`),
     enabled: serverId !== null,
+  });
+
+export const useServerMembersQuery = (serverId: string | null) =>
+  useQuery({
+    queryKey: ["server-members", serverId],
+    queryFn: () => get<ServerMember[]>(`/servers/${serverId}/members`),
+    enabled: serverId !== null,
+    refetchInterval: 10_000,
   });
 
 export const useDirectChannelsQuery = () =>
@@ -72,6 +80,56 @@ export const useJoinServerMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: { serverId: string }) => post<Server>(`/servers/${payload.serverId}/join`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+    },
+  });
+};
+
+export const useUpdateServerMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      serverId: string;
+      name?: string;
+      icon_url?: string | null;
+      banner_url?: string | null;
+      region?: string | null;
+      is_nsfw?: boolean;
+    }) => {
+      const { serverId, ...body } = payload;
+      return patch<Server>(`/servers/${serverId}`, body);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+    },
+  });
+};
+
+export const useUploadServerIconMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { serverId: string; file: File }) => uploadServerIcon<Server>(payload.serverId, payload.file),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+    },
+  });
+};
+
+export const useDeleteServerIconMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { serverId: string }) => del<Server>(`/servers/${payload.serverId}/icon`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+    },
+  });
+};
+
+export const useUploadServerBannerMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { serverId: string; file: File }) => uploadServerBanner<Server>(payload.serverId, payload.file),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["servers"] });
     },

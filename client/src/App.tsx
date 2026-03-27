@@ -1,13 +1,13 @@
-﻿import { AnimatePresence, motion } from "framer-motion";
-import { Suspense, lazy, useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { TitleBar } from "@/components/layout/TitleBar";
+import { useI18n } from "@/i18n/provider";
 import HomePage from "@/pages/Home";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import ServerPage from "@/pages/Server";
-import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
 import { useUiStore } from "@/store/uiStore";
 
@@ -36,11 +36,46 @@ const App = () => {
   const toasts = useUiStore((state) => state.toasts);
   const removeToast = useUiStore((state) => state.removeToast);
   const location = useLocation();
+  const toastTimersRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     void hydrate();
     hydrateTheme();
   }, [hydrate, hydrateTheme]);
+
+  useEffect(() => {
+    const activeIds = new Set(toasts.map((toast) => toast.id));
+
+    for (const toast of toasts) {
+      if (toastTimersRef.current.has(toast.id)) {
+        continue;
+      }
+
+      const timeoutId = window.setTimeout(() => {
+        removeToast(toast.id);
+        toastTimersRef.current.delete(toast.id);
+      }, 2_000);
+      toastTimersRef.current.set(toast.id, timeoutId);
+    }
+
+    for (const [id, timeoutId] of toastTimersRef.current.entries()) {
+      if (activeIds.has(id)) {
+        continue;
+      }
+      window.clearTimeout(timeoutId);
+      toastTimersRef.current.delete(id);
+    }
+  }, [removeToast, toasts]);
+
+  useEffect(
+    () => () => {
+      for (const timeoutId of toastTimersRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      toastTimersRef.current.clear();
+    },
+    [],
+  );
 
   return (
     <div className="h-screen overflow-hidden bg-paw-bg-primary text-paw-text-primary">
@@ -96,17 +131,34 @@ const App = () => {
         </motion.div>
       </AnimatePresence>
 
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50 space-y-2">
-        {toasts.map((toast) => (
-          <button
-            key={toast.id}
-            className="pointer-events-auto block min-w-64 rounded-lg border border-white/12 bg-black/30 px-4 py-3 text-left shadow-[0_16px_34px_rgba(0,0,0,0.45)] backdrop-blur-sm"
-            onClick={() => removeToast(toast.id)}
-          >
-            <p className="font-semibold text-paw-text-primary">{toast.title}</p>
-            <p className="text-sm text-paw-text-secondary">{toast.description}</p>
-          </button>
-        ))}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[320px] max-w-[92vw] flex-col gap-2">
+        <AnimatePresence initial={false}>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className="pointer-events-auto rounded-lg border border-white/10 bg-black/22 px-3 py-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.28)] backdrop-blur-sm"
+            >
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold text-paw-text-primary">{toast.title}</p>
+                  {toast.description.trim().length > 0 ? <p className="mt-0.5 line-clamp-2 text-[13px] text-paw-text-secondary">{toast.description}</p> : null}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close toast"
+                  onClick={() => removeToast(toast.id)}
+                  className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition hover:bg-white/10 hover:text-paw-text-secondary"
+                >
+                  ×
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );

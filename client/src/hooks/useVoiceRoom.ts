@@ -63,6 +63,8 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
+  const connectedChannelIdRef = useRef<string | null>(null);
+  const sendGatewayEventRef = useRef<(type: string, data: Record<string, unknown>) => boolean>(() => false);
 
   const participants = useMemo(() => {
     if (!connectedChannelId) {
@@ -70,6 +72,50 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
     return participantsByChannel[connectedChannelId] ?? [];
   }, [connectedChannelId, participantsByChannel]);
+
+  const waitForSocketOpen = useCallback(async (targetSocket: WebSocket): Promise<boolean> => {
+    if (targetSocket.readyState === WebSocket.OPEN) {
+      return true;
+    }
+    if (targetSocket.readyState !== WebSocket.CONNECTING) {
+      return false;
+    }
+
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      let timeoutHandle = 0;
+
+      const cleanup = () => {
+        targetSocket.removeEventListener("open", onOpen);
+        targetSocket.removeEventListener("close", onClose);
+        targetSocket.removeEventListener("error", onError);
+        if (timeoutHandle) {
+          window.clearTimeout(timeoutHandle);
+        }
+      };
+
+      const finish = (value: boolean) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const onOpen = () => finish(true);
+      const onClose = () => finish(false);
+      const onError = () => finish(false);
+
+      targetSocket.addEventListener("open", onOpen, { once: true });
+      targetSocket.addEventListener("close", onClose, { once: true });
+      targetSocket.addEventListener("error", onError, { once: true });
+
+      timeoutHandle = window.setTimeout(() => {
+        finish(targetSocket.readyState === WebSocket.OPEN);
+      }, 4_000);
+    });
+  }, []);
 
   const sendGatewayEvent = useCallback(
     (type: string, data: Record<string, unknown>): boolean => {
@@ -81,6 +127,14 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     },
     [socket],
   );
+
+  useEffect(() => {
+    connectedChannelIdRef.current = connectedChannelId;
+  }, [connectedChannelId]);
+
+  useEffect(() => {
+    sendGatewayEventRef.current = sendGatewayEvent;
+  }, [sendGatewayEvent]);
 
   const stopLocalStream = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -177,7 +231,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
   const join = useCallback(
     async (channelId: string, serverId: string | null): Promise<boolean> => {
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (!socket) {
+        return false;
+      }
+
+      const socketReady = await waitForSocketOpen(socket);
+      if (!socketReady) {
         return false;
       }
 
@@ -226,7 +285,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       return true;
     },
-    [clearChannel, closeAllPeers, connectedChannelId, deafened, muted, sendGatewayEvent, setConnectedChannel, socket],
+    [clearChannel, closeAllPeers, connectedChannelId, deafened, muted, sendGatewayEvent, setConnectedChannel, socket, waitForSocketOpen],
   );
 
   const leave = useCallback(async () => {
@@ -352,7 +411,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
         if (signal.signal_type === "offer") {
           try {
-            await peer.setRemoteDescription(new RTCSessionDescription(signal.payload as RTCSessionDescriptionInit));
+            await peer.setRemoteDescription(new RTCSessionDescription(signal.payload as unknown as RTCSessionDescriptionInit));
             await flushPendingCandidates(signal.user_id, peer);
             const answer = await peer.createAnswer();
             await peer.setLocalDescription(answer);
@@ -371,7 +430,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
         if (signal.signal_type === "answer") {
           try {
-            await peer.setRemoteDescription(new RTCSessionDescription(signal.payload as RTCSessionDescriptionInit));
+            await peer.setRemoteDescription(new RTCSessionDescription(signal.payload as unknown as RTCSessionDescriptionInit));
             await flushPendingCandidates(signal.user_id, peer);
           } catch {
             closePeer(signal.user_id);
@@ -409,18 +468,19 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
   useEffect(() => {
     return () => {
-      if (connectedChannelId) {
-        sendGatewayEvent("VOICE_LEAVE", { channel_id: connectedChannelId });
+      const activeChannelId = connectedChannelIdRef.current;
+      if (activeChannelId) {
+        sendGatewayEventRef.current("VOICE_LEAVE", { channel_id: activeChannelId });
       }
       stopLocalStream();
       closeAllPeers();
       setRemoteStreams({});
-      if (connectedChannelId) {
-        clearChannel(connectedChannelId);
+      if (activeChannelId) {
+        clearChannel(activeChannelId);
       }
       setConnectedChannel(null);
     };
-  }, [clearChannel, closeAllPeers, connectedChannelId, sendGatewayEvent, setConnectedChannel, stopLocalStream]);
+  }, [clearChannel, closeAllPeers, setConnectedChannel, stopLocalStream]);
 
   return {
     connectedChannelId,

@@ -5,10 +5,14 @@ import {
   useChannelsQuery,
   useCreateChannelMutation,
   useCreateMessageMutation,
+  useDeleteServerIconMutation,
   useDeleteMessageMutation,
   useMessagesQuery,
   useServersQuery,
+  useUpdateServerMutation,
   useUpdateMessageMutation,
+  useUploadServerBannerMutation,
+  useUploadServerIconMutation,
   useUploadAttachmentsMutation,
 } from "@/api/queries";
 import type { UploadProgressEvent } from "@/api/client";
@@ -17,8 +21,10 @@ import { MessageList } from "@/components/chat/MessageList";
 import { ChannelList } from "@/components/layout/ChannelList";
 import { MemberList } from "@/components/layout/MemberList";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Modal } from "@/components/ui/Modal";
 import { useVoiceRoom } from "@/hooks/useVoiceRoom";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useI18n } from "@/i18n/provider";
@@ -30,6 +36,9 @@ import { useUiStore } from "@/store/uiStore";
 import type { Message } from "@/types";
 
 const VoiceChannel = lazy(() => import("@/components/voice/VoiceChannel").then((module) => ({ default: module.VoiceChannel })));
+const SERVER_ICON_MAX_BYTES = 10 * 1024 * 1024;
+const SERVER_BANNER_MAX_BYTES = 15 * 1024 * 1024;
+const ALLOWED_SERVER_ICON_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif"]);
 
 const compactPreview = (value: string): string => {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -51,6 +60,12 @@ const ServerPage = () => {
   const [editingMessage, setEditingMessage] = useState<{ id: string; preview: string } | null>(null);
   const [draftPreset, setDraftPreset] = useState<{ key: string; text: string; mode?: "replace" | "append" } | null>(null);
   const [pendingDeleteMessage, setPendingDeleteMessage] = useState<Message | null>(null);
+  const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
+  const [serverNameDraft, setServerNameDraft] = useState("");
+  const [serverIconFile, setServerIconFile] = useState<File | null>(null);
+  const [serverIconPreview, setServerIconPreview] = useState<string | null>(null);
+  const [serverBannerFile, setServerBannerFile] = useState<File | null>(null);
+  const [serverBannerPreview, setServerBannerPreview] = useState<string | null>(null);
   const lastReadAckByChannelRef = useRef<Record<string, string>>({});
 
   const setServers = useServerStore((state) => state.setServers);
@@ -71,6 +86,7 @@ const ServerPage = () => {
   const activeChannel = useMemo(() => storedChannels.find((item) => item.id === activeChannelId) ?? null, [storedChannels, activeChannelId]);
   const activeChannelName = activeChannel?.name ?? "general";
   const currentServer = useMemo(() => servers?.find((item) => item.id === serverId) ?? null, [servers, serverId]);
+  const canManageServer = Boolean(currentServer && currentUserId && currentServer.owner_id === currentUserId);
 
   const textChannelId = activeChannel && activeChannel.type !== "voice" ? activeChannel.id : null;
   const { data: messages } = useMessagesQuery(textChannelId);
@@ -95,11 +111,28 @@ const ServerPage = () => {
     setEditingMessage(null);
   }, [textChannelId]);
 
+  useEffect(
+    () => () => {
+      if (serverIconPreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(serverIconPreview);
+      }
+      if (serverBannerPreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(serverBannerPreview);
+      }
+    },
+    [serverBannerPreview, serverIconPreview],
+  );
+
   const createMessage = useCreateMessageMutation();
   const uploadAttachments = useUploadAttachmentsMutation();
   const updateMessage = useUpdateMessageMutation();
   const deleteMessage = useDeleteMessageMutation();
   const createChannel = useCreateChannelMutation();
+  const updateServer = useUpdateServerMutation();
+  const uploadServerIcon = useUploadServerIconMutation();
+  const deleteServerIcon = useDeleteServerIconMutation();
+  const uploadServerBanner = useUploadServerBannerMutation();
+  const isSavingServerSettings = updateServer.isPending || uploadServerIcon.isPending || uploadServerBanner.isPending || deleteServerIcon.isPending;
 
   useEffect(() => {
     if (servers) {
@@ -305,6 +338,14 @@ const ServerPage = () => {
     }
   };
 
+  const handleVoiceJoin = async (channelId: string) => {
+    setActiveChannel(channelId);
+    const joined = await voiceRoom.join(channelId, serverId ?? null);
+    if (!joined) {
+      pushToast(t("voice.connect_failed"), t("voice.connect_failed_desc"));
+    }
+  };
+
   const copyInvite = async () => {
     if (!serverId) {
       return;
@@ -328,6 +369,132 @@ const ServerPage = () => {
       } catch {
         pushToast(t("server.invite_copy_failed"), serverId);
       }
+    }
+  };
+
+  const openServerSettings = () => {
+    if (!canManageServer) {
+      pushToast(t("server.settings_forbidden"), "");
+      return;
+    }
+    setServerNameDraft(currentServer?.name ?? "");
+    setServerIconFile(null);
+    setServerIconPreview(currentServer?.icon_url ?? null);
+    setServerBannerFile(null);
+    setServerBannerPreview(currentServer?.banner_url ?? null);
+    setServerSettingsOpen(true);
+  };
+
+  const closeServerSettings = () => {
+    if (serverIconPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(serverIconPreview);
+    }
+    if (serverBannerPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(serverBannerPreview);
+    }
+    setServerSettingsOpen(false);
+    setServerIconFile(null);
+    setServerIconPreview(null);
+    setServerBannerFile(null);
+    setServerBannerPreview(null);
+  };
+
+  const handleSelectServerIcon = (file: File | null) => {
+    if (!file) {
+      return;
+    }
+    if (!ALLOWED_SERVER_ICON_MIME_TYPES.has(file.type)) {
+      pushToast(t("server.settings_icon_invalid_type_title"), t("server.settings_icon_invalid_type_desc"));
+      return;
+    }
+    if (file.size > SERVER_ICON_MAX_BYTES) {
+      pushToast(t("server.settings_icon_invalid_size_title"), t("server.settings_icon_invalid_size_desc"));
+      return;
+    }
+
+    if (serverIconPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(serverIconPreview);
+    }
+
+    setServerIconFile(file);
+    setServerIconPreview(URL.createObjectURL(file));
+  };
+
+  const handleSelectServerBanner = (file: File | null) => {
+    if (!file) {
+      return;
+    }
+    if (!ALLOWED_SERVER_ICON_MIME_TYPES.has(file.type)) {
+      pushToast(t("server.settings_banner_invalid_type_title"), t("server.settings_banner_invalid_type_desc"));
+      return;
+    }
+    if (file.size > SERVER_BANNER_MAX_BYTES) {
+      pushToast(t("server.settings_banner_invalid_size_title"), t("server.settings_banner_invalid_size_desc"));
+      return;
+    }
+
+    if (serverBannerPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(serverBannerPreview);
+    }
+
+    setServerBannerFile(file);
+    setServerBannerPreview(URL.createObjectURL(file));
+  };
+
+  const handleDeleteServerIcon = async () => {
+    if (!serverId || !canManageServer) {
+      pushToast(t("server.settings_forbidden"), "");
+      return;
+    }
+
+    try {
+      await deleteServerIcon.mutateAsync({ serverId });
+      if (serverIconPreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(serverIconPreview);
+      }
+      setServerIconFile(null);
+      setServerIconPreview(null);
+      pushToast(t("server.settings_icon_deleted_title"), t("server.settings_icon_deleted_desc"));
+    } catch (error) {
+      pushToast(t("server.settings_icon_delete_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
+    }
+  };
+
+  const saveServerSettings = async () => {
+    if (!serverId || !canManageServer) {
+      pushToast(t("server.settings_forbidden"), "");
+      return;
+    }
+
+    const nextName = serverNameDraft.trim();
+    if (nextName.length < 2 || nextName.length > 100) {
+      pushToast(t("server.settings_name_invalid_title"), t("server.settings_name_invalid_desc"));
+      return;
+    }
+
+    const nameChanged = nextName !== (currentServer?.name ?? "");
+    const iconChanged = serverIconFile !== null;
+    const bannerChanged = serverBannerFile !== null;
+
+    if (!nameChanged && !iconChanged && !bannerChanged) {
+      closeServerSettings();
+      return;
+    }
+
+    try {
+      if (nameChanged) {
+        await updateServer.mutateAsync({ serverId, name: nextName });
+      }
+      if (iconChanged && serverIconFile) {
+        await uploadServerIcon.mutateAsync({ serverId, file: serverIconFile });
+      }
+      if (bannerChanged && serverBannerFile) {
+        await uploadServerBanner.mutateAsync({ serverId, file: serverBannerFile });
+      }
+      pushToast(t("server.settings_saved_title"), t("server.settings_saved_desc"));
+      closeServerSettings();
+    } catch (error) {
+      pushToast(t("server.settings_save_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
     }
   };
 
@@ -398,25 +565,22 @@ const ServerPage = () => {
       <ChannelList
         connectedVoiceChannelId={voiceRoom.connectedChannelId}
         onJoinVoice={(channelId) => {
-          setActiveChannel(channelId);
-          void voiceRoom.join(channelId, serverId ?? null);
+          void handleVoiceJoin(channelId);
         }}
         onLeaveVoice={() => void voiceRoom.leave()}
         onCreateTextChannel={() => void handleCreateTextChannel()}
         onCreateVoiceChannel={() => void handleCreateVoiceChannel()}
+        onInvite={() => void copyInvite()}
+        onOpenServerSettings={openServerSettings}
+        canManageServer={canManageServer}
         isCreatingChannel={createChannel.isPending}
       />
 
       <section className="flex min-w-0 flex-1 flex-col bg-paw-bg-primary">
-        <header className="flex h-12 items-center justify-between border-b border-white/10 bg-black/20 px-4">
+        <header className="flex h-12 items-center border-b border-white/10 bg-black/20 px-4">
           <div className="flex items-center gap-2">
             <span className="text-lg text-paw-text-muted">#</span>
             <h3 className="text-[15px] font-semibold text-paw-text-secondary">{activeChannel?.name ?? t("server.no_channel_selected")}</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button className="bg-black/25 px-3 py-1 text-xs text-paw-text-secondary shadow-none hover:bg-black/35" onClick={() => void copyInvite()}>
-              {t("server.invite_button")}
-            </Button>
           </div>
         </header>
 
@@ -457,7 +621,7 @@ const ServerPage = () => {
                 muted={voiceRoom.muted}
                 deafened={voiceRoom.deafened}
                 volume={voiceRoom.volume}
-                onConnect={() => void voiceRoom.join(activeChannel.id, serverId ?? null)}
+                onConnect={() => void handleVoiceJoin(activeChannel.id)}
                 onLeave={() => void voiceRoom.leave()}
                 onToggleMute={voiceRoom.toggleMuted}
                 onToggleDeafen={voiceRoom.toggleDeafened}
@@ -503,6 +667,85 @@ const ServerPage = () => {
       </section>
 
       <MemberList />
+
+      <Modal open={serverSettingsOpen} title={t("server.settings_title")} onClose={closeServerSettings}>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            <Avatar src={serverIconPreview ?? currentServer?.icon_url ?? null} label={currentServer?.name ?? "server"} size="lg" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-paw-text-secondary">{currentServer?.name ?? "Server"}</p>
+              <p className="text-xs text-paw-text-muted">{t("server.settings_icon_hint")}</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
+                {t("server.settings_icon_upload")}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif"
+                  className="hidden"
+                  onChange={(event) => handleSelectServerIcon(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              <Button
+                className="bg-black/25 px-3 py-1.5 text-xs text-paw-text-secondary shadow-none hover:bg-black/35"
+                onClick={() => void handleDeleteServerIcon()}
+                disabled={deleteServerIcon.isPending || (!serverIconPreview && !currentServer?.icon_url)}
+              >
+                {t("server.settings_icon_delete")}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-paw-text-secondary">{t("server.settings_banner_title")}</p>
+                <p className="text-xs text-paw-text-muted">{t("server.settings_banner_hint")}</p>
+              </div>
+              <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
+                {t("server.settings_banner_upload")}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif"
+                  className="hidden"
+                  onChange={(event) => handleSelectServerBanner(event.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+            <div className="h-24 overflow-hidden rounded-lg border border-white/10 bg-black/25">
+              {serverBannerPreview ?? currentServer?.banner_url ? (
+                <img
+                  src={serverBannerPreview ?? currentServer?.banner_url ?? ""}
+                  alt={t("server.settings_banner_title")}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="grid h-full place-items-center text-xs text-paw-text-muted">{t("server.settings_banner_empty")}</div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("server.settings_name_label")}</label>
+            <input
+              value={serverNameDraft}
+              onChange={(event) => setServerNameDraft(event.target.value)}
+              placeholder={t("server.settings_name_placeholder")}
+              className="h-10 w-full rounded-md border border-white/12 bg-black/25 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+              maxLength={100}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button className="bg-black/25 px-3 py-1.5 text-xs text-paw-text-secondary shadow-none hover:bg-black/35" onClick={closeServerSettings}>
+              {t("message.cancel")}
+            </Button>
+            <Button className="px-3 py-1.5 text-xs" onClick={() => void saveServerSettings()} disabled={isSavingServerSettings}>
+              {isSavingServerSettings ? t("server.settings_saving") : t("server.settings_save")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={pendingDeleteMessage !== null}

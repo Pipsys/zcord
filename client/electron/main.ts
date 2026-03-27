@@ -8,6 +8,7 @@ const SERVICE_NAME = "pawcord-desktop";
 const ACCESS_ACCOUNT_NAME = "auth-token";
 const REFRESH_ACCOUNT_NAME = "refresh-token";
 const isMac = process.platform === "darwin";
+const ALLOWED_MEDIA_PERMISSIONS = new Set(["media", "audioCapture", "videoCapture", "display-capture"]);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -272,8 +273,14 @@ const createWindow = async (): Promise<void> => {
     callback(matches ? 0 : -2);
   });
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false);
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const isMainWindow = Boolean(mainWindow && webContents.id === mainWindow.webContents.id);
+    callback(isMainWindow && ALLOWED_MEDIA_PERMISSIONS.has(permission));
+  });
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    const isMainWindow = Boolean(mainWindow && webContents && webContents.id === mainWindow.webContents.id);
+    return isMainWindow && ALLOWED_MEDIA_PERMISSIONS.has(permission);
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -447,6 +454,94 @@ ipcMain.handle(
       const blob = new Blob([binary], { type: payload.file.type || "application/octet-stream" });
       formData.append("file", blob, payload.file.name);
       return fetch(`${endpoint}/users/me/avatar`, {
+        method: "POST",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        body: formData,
+      });
+    };
+
+    let response = await executeUpload(token);
+    let data = await parseJsonResponse(response);
+
+    if (response.status === 401) {
+      const refreshed = await tryRefreshAccessToken(endpoint);
+      if (refreshed) {
+        token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+        response = await executeUpload(token);
+        data = await parseJsonResponse(response);
+      }
+    }
+
+    if (response.ok) {
+      await persistTokensFromPayload(data);
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+    };
+  },
+);
+
+ipcMain.handle(
+  "api:upload-server-icon",
+  async (
+    _event,
+    payload: { serverId: string; file: { name: string; type: string; data: ArrayBuffer; size: number; lastModified: number } },
+  ) => {
+    let token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+    const endpoint = getApiEndpoint();
+    const executeUpload = async (accessToken: string | null) => {
+      const formData = new FormData();
+      const binary = toArrayBuffer(payload.file.data);
+      const blob = new Blob([binary], { type: payload.file.type || "application/octet-stream" });
+      formData.append("file", blob, payload.file.name);
+      return fetch(`${endpoint}/servers/${encodeURIComponent(payload.serverId)}/icon`, {
+        method: "POST",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        body: formData,
+      });
+    };
+
+    let response = await executeUpload(token);
+    let data = await parseJsonResponse(response);
+
+    if (response.status === 401) {
+      const refreshed = await tryRefreshAccessToken(endpoint);
+      if (refreshed) {
+        token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+        response = await executeUpload(token);
+        data = await parseJsonResponse(response);
+      }
+    }
+
+    if (response.ok) {
+      await persistTokensFromPayload(data);
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+    };
+  },
+);
+
+ipcMain.handle(
+  "api:upload-server-banner",
+  async (
+    _event,
+    payload: { serverId: string; file: { name: string; type: string; data: ArrayBuffer; size: number; lastModified: number } },
+  ) => {
+    let token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+    const endpoint = getApiEndpoint();
+    const executeUpload = async (accessToken: string | null) => {
+      const formData = new FormData();
+      const binary = toArrayBuffer(payload.file.data);
+      const blob = new Blob([binary], { type: payload.file.type || "application/octet-stream" });
+      formData.append("file", blob, payload.file.name);
+      return fetch(`${endpoint}/servers/${encodeURIComponent(payload.serverId)}/banner`, {
         method: "POST",
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         body: formData,

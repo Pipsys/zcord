@@ -29,6 +29,15 @@ export interface Server {
   created_at: string;
 }
 
+export interface ServerMember {
+  user_id: string;
+  username: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  status: UserStatus;
+  joined_at: string;
+}
+
 export interface Channel {
   id: string;
   server_id: string | null;

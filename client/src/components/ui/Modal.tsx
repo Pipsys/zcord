@@ -11,14 +11,14 @@ export const Modal = ({ open, title, onClose, children }: ModalProps) => (
   <AnimatePresence>
     {open ? (
       <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-[3px]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
       >
         <motion.div
-          className="w-full max-w-md rounded-lg border border-paw-bg-tertiary bg-paw-bg-elevated p-5 shadow-lg shadow-black/40"
+          className="w-full max-w-md rounded-2xl border border-white/14 bg-[linear-gradient(180deg,rgba(30,38,50,0.96),rgba(19,24,33,0.96))] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
           initial={{ scale: 0.94, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.94, opacity: 0 }}
