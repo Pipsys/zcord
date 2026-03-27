@@ -249,12 +249,15 @@ async def refresh(
 async def logout(
     request: Request,
     response: Response,
+    payload: RefreshRequest | None = None,
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
     access_token: str = Depends(oauth2_scheme),
 ):
     auth = AuthService(session)
-    token = request.cookies.get("refresh_token")
+    token = payload.refresh_token if payload else None
+    if token is None:
+        token = request.cookies.get("refresh_token")
     await auth.logout(token, UUID(str(user.id)), request.client.host if request.client else None)
 
     try:
@@ -269,4 +272,3 @@ async def logout(
     response.delete_cookie("refresh_token", path="/api/v1/auth")
     response.delete_cookie("csrf_token", path="/api/v1/auth")
     return LogoutResponse(ok=True)
-

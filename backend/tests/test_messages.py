@@ -9,7 +9,7 @@ from app.services.encryption_service import EncryptionService
 
 async def _register(client, suffix: str) -> str:
     username = f"u-{suffix}"
-    email = f"{username}@pawcord.local"
+    email = f"{username}@example.com"
     response = await client.post(
         "/api/v1/auth/register",
         json={"username": username, "email": email, "password": "S3cretPass!", "public_key": None},

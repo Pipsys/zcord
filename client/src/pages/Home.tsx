@@ -332,6 +332,7 @@ const HomePage = () => {
   const pendingFriends = useMemo(() => sortedFriends.filter((item) => item.status === "pending"), [sortedFriends]);
   const incomingPendingFriends = useMemo(() => pendingFriends.filter((item) => item.addressee_id === currentUserId), [pendingFriends, currentUserId]);
   const outgoingPendingFriends = useMemo(() => pendingFriends.filter((item) => item.requester_id === currentUserId), [pendingFriends, currentUserId]);
+  const isAddTab = tab === "add";
 
   const filteredFriends = useMemo(() => {
     const value = search.trim().toLowerCase();
@@ -407,9 +408,30 @@ const HomePage = () => {
 
   const handleFriendRequest = async (event: FormEvent) => {
     event.preventDefault();
+    if (sendFriendRequest.isPending) {
+      return;
+    }
     const candidate = friendId.trim();
     if (!uuidPattern.test(candidate)) {
       pushToast(t("home.request_failed"), t("home.invalid_uuid"));
+      return;
+    }
+
+    const existingRelation = sortedFriends.find((relation) => formatPeerId(relation, currentUserId) === candidate);
+    if (existingRelation) {
+      if (existingRelation.status === "accepted") {
+        pushToast(t("home.request_failed"), t("home.request_exists_accepted"));
+        return;
+      }
+      if (existingRelation.status === "blocked") {
+        pushToast(t("home.request_failed"), t("home.request_exists_blocked"));
+        return;
+      }
+      if (existingRelation.requester_id === currentUserId) {
+        pushToast(t("home.request_failed"), t("home.request_exists_outgoing"));
+        return;
+      }
+      pushToast(t("home.request_failed"), t("home.request_exists_incoming"));
       return;
     }
 
@@ -737,8 +759,7 @@ const HomePage = () => {
         </section>
       ) : (
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-12 items-center gap-3 border-b border-white/10 bg-black/20 px-4">
-            <h2 className="text-[16px] font-semibold text-paw-text-secondary">{t("home.header_friends")}</h2>
+          <header className="flex h-12 items-center gap-2 border-b border-white/10 bg-black/20 px-4">
             <button className={`rounded-md px-3 py-1 text-sm font-semibold ${tab === "online" ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/70"}`} onClick={() => setTab("online")}>
               {t("home.tab_online")}
             </button>
@@ -752,106 +773,125 @@ const HomePage = () => {
 
           <div className="flex min-h-0 flex-1">
             <main className="flex-1 overflow-auto p-4">
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t("home.search_friends_placeholder")}
-                className="mb-4 h-10 w-full rounded-md border border-white/10 bg-black/20 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
-              />
+              {isAddTab ? (
+                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.22)]">
+                  <div className="mb-5">
+                    <h3 className="text-base font-semibold text-paw-text-secondary">{t("home.add_friend_title")}</h3>
+                    <p className="mt-1 max-w-2xl text-sm leading-6 text-paw-text-muted">{t("home.add_friend_description")}</p>
+                  </div>
 
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("home.online_count", { count: acceptedFriends.length })}</p>
-
-              {filteredFriends.length === 0 ? <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-paw-text-muted">{t("home.no_friends")}</p> : null}
-
-              <div className="space-y-0.5">
-                {filteredFriends.map((relation) => {
-                  const peerId = formatPeerId(relation, currentUserId);
-                  const peerName = formatPeerName(relation, currentUserId);
-                  const peerAvatar = formatPeerAvatar(relation, currentUserId);
-                  return (
-                    <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-2 hover:border-white/10 hover:bg-white/[0.03]">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Avatar src={peerAvatar} label={peerName} size="sm" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-paw-text-secondary">{peerName}</p>
-                          <p className="truncate text-xs text-paw-text-muted">{statusLabels[relation.status]}</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-paw-text-muted">{new Date(relation.created_at).toLocaleDateString()}</p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {tab === "add" ? (
-                <section className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <h3 className="mb-2 text-sm font-semibold text-paw-text-secondary">{t("home.add_friend_title")}</h3>
-                  <form onSubmit={handleFriendRequest} className="flex gap-2">
+                  <form onSubmit={handleFriendRequest} className="flex flex-col gap-3 md:flex-row">
                     <input
                       value={friendId}
                       onChange={(event) => setFriendId(event.target.value)}
                       placeholder={t("home.friend_id_placeholder")}
-                      className="h-10 flex-1 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+                      className="h-11 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
                     />
-                    <Button type="submit" disabled={sendFriendRequest.isPending}>
+                    <Button type="submit" className="min-w-[180px] justify-center" disabled={sendFriendRequest.isPending}>
                       {t("home.send_request")}
                     </Button>
                   </form>
 
-                  <h4 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("home.friend_requests")}</h4>
-                  <div className="space-y-1">
-                    {pendingFriends.length === 0 ? <p className="text-xs text-paw-text-muted">{t("home.no_friend_requests")}</p> : null}
-                    {incomingPendingFriends.map((relation) => {
+                  <div className="mt-6 grid gap-4 xl:grid-cols-2">
+                    <section className="rounded-xl border border-white/10 bg-black/20 p-4">
+                      <div className="mb-3">
+                        <h4 className="text-sm font-semibold text-paw-text-secondary">{t("home.incoming_requests_title")}</h4>
+                        <p className="mt-1 text-xs leading-5 text-paw-text-muted">{t("home.incoming_requests_description")}</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        {incomingPendingFriends.length === 0 ? <p className="text-sm text-paw-text-muted">{t("home.no_incoming_requests")}</p> : null}
+                        {incomingPendingFriends.map((relation) => {
+                          const peerName = formatPeerName(relation, currentUserId);
+                          const peerAvatar = formatPeerAvatar(relation, currentUserId);
+                          return (
+                            <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <Avatar src={peerAvatar} label={peerName} size="sm" />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-paw-text-secondary">{peerName}</p>
+                                  <p className="truncate text-xs text-paw-text-muted">{new Date(relation.created_at).toLocaleDateString()}</p>
+                                </div>
+                              </div>
+                              <Button className="shrink-0 px-3 py-1.5 text-xs" disabled={updateFriendRequest.isPending} onClick={() => void handleAcceptFriendRequest(relation.requester_id)}>
+                                {t("home.accept_request")}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    <section className="rounded-xl border border-white/10 bg-black/20 p-4">
+                      <div className="mb-3">
+                        <h4 className="text-sm font-semibold text-paw-text-secondary">{t("home.outgoing_requests_title")}</h4>
+                        <p className="mt-1 text-xs leading-5 text-paw-text-muted">{t("home.outgoing_requests_description")}</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        {outgoingPendingFriends.length === 0 ? <p className="text-sm text-paw-text-muted">{t("home.no_outgoing_requests")}</p> : null}
+                        {outgoingPendingFriends.map((relation) => {
+                          const peerName = formatPeerName(relation, currentUserId);
+                          const peerAvatar = formatPeerAvatar(relation, currentUserId);
+                          return (
+                            <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <Avatar src={peerAvatar} label={peerName} size="sm" />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-paw-text-secondary">{peerName}</p>
+                                  <p className="truncate text-xs text-paw-text-muted">{new Date(relation.created_at).toLocaleDateString()}</p>
+                                </div>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-paw-text-muted">
+                                {statusLabels.pending}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  </div>
+                </section>
+              ) : (
+                <>
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={t("home.search_friends_placeholder")}
+                    className="mb-4 h-10 w-full rounded-md border border-white/10 bg-black/20 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+                  />
+
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-paw-text-muted">
+                    {tab === "online" ? t("home.online_count", { count: acceptedFriends.length }) : t("home.all_count", { count: sortedFriends.length })}
+                  </p>
+
+                  {filteredFriends.length === 0 ? <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-paw-text-muted">{t("home.no_friends")}</p> : null}
+
+                  <div className="space-y-0.5">
+                    {filteredFriends.map((relation) => {
+                      const peerId = formatPeerId(relation, currentUserId);
                       const peerName = formatPeerName(relation, currentUserId);
+                      const peerAvatar = formatPeerAvatar(relation, currentUserId);
                       return (
-                        <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between rounded-md border border-white/10 bg-black/20 px-2 py-2">
-                          <p className="text-xs text-paw-text-secondary">{t("home.request_incoming", { id: peerName })}</p>
-                          <Button className="px-2 py-1 text-xs" disabled={updateFriendRequest.isPending} onClick={() => void handleAcceptFriendRequest(relation.requester_id)}>
-                            {t("home.accept_request")}
-                          </Button>
+                        <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-2 hover:border-white/10 hover:bg-white/[0.03]">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Avatar src={peerAvatar} label={peerName} size="sm" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-paw-text-secondary">{peerName}</p>
+                              <p className="truncate text-xs text-paw-text-muted">{statusLabels[relation.status]}</p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-paw-text-muted">{new Date(relation.created_at).toLocaleDateString()}</p>
                         </div>
-                      );
-                    })}
-                    {outgoingPendingFriends.map((relation) => {
-                      const peerName = formatPeerName(relation, currentUserId);
-                      return (
-                        <p key={`${relation.requester_id}:${relation.addressee_id}`} className="text-xs text-paw-text-secondary">
-                          {t("home.request_outgoing", { id: peerName })}
-                        </p>
                       );
                     })}
                   </div>
-                </section>
-              ) : null}
+                </>
+              )}
             </main>
 
             <aside className="hidden w-80 border-l border-white/10 bg-black/10 p-4 xl:block">
-              <h3 className="mb-3 text-lg font-semibold text-paw-text-secondary">{t("home.active_contacts")}</h3>
-              <div className="space-y-2">
-                {acceptedFriends.slice(0, 5).map((relation) => {
-                  const peerId = formatPeerId(relation, currentUserId);
-                  const peerName = formatPeerName(relation, currentUserId);
-                  const peerAvatar = formatPeerAvatar(relation, currentUserId);
-                  return (
-                    <button
-                      key={`${relation.requester_id}:${relation.addressee_id}`}
-                      className="block w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left hover:bg-white/[0.06]"
-                      onClick={() => void handleOpenDirectMessage(peerId, peerName)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Avatar src={peerAvatar} label={peerName} size="sm" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-paw-text-secondary">{peerName}</p>
-                          <p className="truncate text-xs text-paw-text-muted">{t("home.request_status_accepted")}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-                {acceptedFriends.length === 0 ? <p className="text-sm text-paw-text-muted">{t("home.no_active_contacts")}</p> : null}
-              </div>
-
-              <section className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <h4 className="mb-2 text-sm font-semibold text-paw-text-secondary">{t("home.tools_title")}</h4>
 
                 <div className="mb-4 rounded-lg border border-white/10 bg-black/20 p-2 text-xs">

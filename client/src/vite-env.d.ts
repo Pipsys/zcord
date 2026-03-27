@@ -32,6 +32,9 @@ interface AttachmentUploadProgressPayload {
 }
 
 interface PawcordBridge {
+  system: {
+    platform: string;
+  };
   window: {
     minimize: () => Promise<void>;
     maximize: () => Promise<void>;
@@ -43,6 +46,7 @@ interface PawcordBridge {
   auth: {
     setToken: (token: string) => Promise<boolean>;
     getToken: () => Promise<string | null>;
+    logout: () => Promise<boolean>;
     clearToken: () => Promise<boolean>;
   };
   request: <T>(payload: ApiRequestPayload) => Promise<{ ok: boolean; status: number; data: T }>;

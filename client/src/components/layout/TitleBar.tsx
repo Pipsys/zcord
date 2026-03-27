@@ -30,6 +30,14 @@ const WindowControlButton = ({ title, onClick, children, danger = false }: Windo
 export const TitleBar = () => {
   const location = useLocation();
   const { t } = useI18n();
+  const isMac = useMemo(() => {
+    const bridgePlatform = typeof window !== "undefined" && "pawcord" in window ? window.pawcord.system.platform : "";
+    if (bridgePlatform) {
+      return bridgePlatform === "darwin";
+    }
+    const fallbackPlatform = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    return /mac/i.test(fallbackPlatform);
+  }, []);
 
   const sectionTitle = useMemo(() => {
     if (location.pathname.startsWith("/app/server/")) {
@@ -42,34 +50,45 @@ export const TitleBar = () => {
   }, [location.pathname, t]);
 
   return (
-    <header className="drag-region flex h-10 items-center justify-between border-b border-white/10 bg-black/20 px-3">
-      <div className="flex items-center gap-2">
+    <header
+      className={clsx(
+        "drag-region relative flex items-center justify-between border-b border-white/10",
+        isMac ? "h-12 bg-[#12171dcc]/90 px-4 backdrop-blur-xl" : "h-10 bg-black/20 px-3",
+      )}
+    >
+      {isMac ? <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" /> : null}
+
+      <div className={clsx("min-w-0 flex items-center", isMac ? "gap-3 pl-[76px]" : "gap-2")}>
         <img src={pawcordLogo} alt="Pawcord" className="h-4 w-4 rounded object-contain" />
-        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-paw-text-muted">Pawcord</span>
+        <span className={clsx("font-semibold uppercase text-paw-text-muted", isMac ? "text-[11px] tracking-[0.18em]" : "text-xs tracking-[0.08em]")}>Pawcord</span>
         <span className="text-xs text-paw-text-muted">/</span>
-        <span className="text-sm font-semibold text-paw-text-secondary">{sectionTitle}</span>
+        <span className={clsx("truncate font-semibold text-paw-text-secondary", isMac ? "text-[13px]" : "text-sm")}>{sectionTitle}</span>
       </div>
 
-      <div className="no-drag-region flex items-center gap-1">
+      <div className={clsx("no-drag-region flex items-center", isMac ? "gap-2" : "gap-1")}>
         <LanguageSwitcher compact />
 
-        <WindowControlButton title={t("window.minimize")} onClick={() => void window.pawcord.window.minimize()}>
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <path d="M3 8.5H13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </WindowControlButton>
+        {!isMac ? (
+          <>
+            <WindowControlButton title={t("window.minimize")} onClick={() => void window.pawcord.window.minimize()}>
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <path d="M3 8.5H13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </WindowControlButton>
 
-        <WindowControlButton title={t("window.maximize")} onClick={() => void window.pawcord.window.maximize()}>
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <rect x="3.2" y="3.2" width="9.6" height="9.6" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
-        </WindowControlButton>
+            <WindowControlButton title={t("window.maximize")} onClick={() => void window.pawcord.window.maximize()}>
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <rect x="3.2" y="3.2" width="9.6" height="9.6" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
+              </svg>
+            </WindowControlButton>
 
-        <WindowControlButton title={t("window.close")} onClick={() => void window.pawcord.window.close()} danger>
-          <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </WindowControlButton>
+            <WindowControlButton title={t("window.close")} onClick={() => void window.pawcord.window.close()} danger>
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </WindowControlButton>
+          </>
+        ) : null}
       </div>
     </header>
   );

@@ -12,7 +12,7 @@ class UserFactory(factory.Factory):
 
     username = factory.Sequence(lambda n: f"user{n}")
     discriminator = factory.Sequence(lambda n: f"{n % 10000:04d}")
-    email = factory.Sequence(lambda n: f"user{n}@pawcord.local")
+    email = factory.Sequence(lambda n: f"user{n}@example.com")
     password_hash = factory.LazyFunction(lambda: hash_password("S3cretPass!"))
     status = UserStatus.online
     is_bot = False

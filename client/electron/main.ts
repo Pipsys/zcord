@@ -7,6 +7,7 @@ import { setupAutoUpdater } from "./updater";
 const SERVICE_NAME = "pawcord-desktop";
 const ACCESS_ACCOUNT_NAME = "auth-token";
 const REFRESH_ACCOUNT_NAME = "refresh-token";
+const isMac = process.platform === "darwin";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -98,6 +99,7 @@ const tryRefreshAccessToken = async (endpoint: string): Promise<boolean> => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(await getCsrfHeaders()),
     },
     body: JSON.stringify({ refresh_token: refreshToken }),
   });
@@ -112,6 +114,52 @@ const tryRefreshAccessToken = async (endpoint: string): Promise<boolean> => {
 };
 
 const shouldTryRefresh = (path: string): boolean => !path.startsWith("/auth/");
+
+const getAuthScopeUrl = (): string => {
+  const endpoint = new URL(getApiEndpoint());
+  const basePath = endpoint.pathname.replace(/\/$/, "");
+  return `${endpoint.origin}${basePath}/auth`;
+};
+
+const getCsrfHeaders = async (): Promise<Record<string, string>> => {
+  try {
+    const csrfCookie = (await session.defaultSession.cookies.get({ url: getAuthScopeUrl(), name: "csrf_token" }))[0];
+    if (!csrfCookie?.value) {
+      return {};
+    }
+    return { "X-CSRF-Token": csrfCookie.value };
+  } catch {
+    return {};
+  }
+};
+
+const clearAuthCookies = async (): Promise<void> => {
+  const authCookieNames = new Set(["refresh_token", "csrf_token"]);
+  const cookies = await session.defaultSession.cookies.get({});
+  for (const cookie of cookies) {
+    if (!authCookieNames.has(cookie.name)) {
+      continue;
+    }
+    const rawDomain = cookie.domain ?? "";
+    if (!rawDomain) {
+      continue;
+    }
+    const domain = rawDomain.startsWith(".") ? rawDomain.slice(1) : rawDomain;
+    const url = `${cookie.secure ? "https" : "http"}://${domain}${cookie.path}`;
+    try {
+      await session.defaultSession.cookies.remove(url, cookie.name);
+    } catch {
+      // Best-effort cleanup for stale auth cookies.
+    }
+  }
+};
+
+const clearStoredAuth = async (): Promise<boolean> => {
+  await keytar.deletePassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+  await keytar.deletePassword(SERVICE_NAME, REFRESH_ACCOUNT_NAME);
+  await clearAuthCookies();
+  return true;
+};
 
 type UploadStatus = "queued" | "uploading" | "done" | "error";
 
@@ -135,8 +183,11 @@ const createWindow = async (): Promise<void> => {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    frame: false,
-    titleBarStyle: "hiddenInset",
+    frame: isMac,
+    titleBarStyle: isMac ? "hiddenInset" : "hidden",
+    trafficLightPosition: isMac ? { x: 16, y: 14 } : undefined,
+    vibrancy: isMac ? "sidebar" : undefined,
+    visualEffectState: isMac ? "active" : undefined,
     backgroundColor: "#0f0e14",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -234,10 +285,54 @@ ipcMain.handle("auth:get-token", async () => {
   return keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
 });
 
-ipcMain.handle("auth:clear-token", async () => {
-  await keytar.deletePassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
-  await keytar.deletePassword(SERVICE_NAME, REFRESH_ACCOUNT_NAME);
+ipcMain.handle("auth:logout", async () => {
+  const endpoint = getApiEndpoint();
+  let accessToken = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+  let refreshToken = await keytar.getPassword(SERVICE_NAME, REFRESH_ACCOUNT_NAME);
+
+  const executeLogout = async (currentAccessToken: string | null, currentRefreshToken: string | null) =>
+    fetch(`${endpoint}/auth/logout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(await getCsrfHeaders()),
+        ...(currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : {}),
+      },
+      body: currentRefreshToken ? JSON.stringify({ refresh_token: currentRefreshToken }) : undefined,
+    });
+
+  try {
+    if (!accessToken && refreshToken) {
+      const refreshed = await tryRefreshAccessToken(endpoint);
+      if (refreshed) {
+        accessToken = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+        refreshToken = await keytar.getPassword(SERVICE_NAME, REFRESH_ACCOUNT_NAME);
+      }
+    }
+
+    if (accessToken || refreshToken) {
+      let response = await executeLogout(accessToken, refreshToken);
+      if (response.status === 401 && refreshToken) {
+        const refreshed = await tryRefreshAccessToken(endpoint);
+        if (refreshed) {
+          accessToken = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+          refreshToken = await keytar.getPassword(SERVICE_NAME, REFRESH_ACCOUNT_NAME);
+          response = await executeLogout(accessToken, refreshToken);
+        }
+      }
+      void response;
+    }
+  } catch {
+    // Local cleanup still happens even if the server-side logout fails.
+  } finally {
+    await clearStoredAuth();
+  }
+
   return true;
+});
+
+ipcMain.handle("auth:clear-token", async () => {
+  return clearStoredAuth();
 });
 
 ipcMain.handle("notify:show", async (_event, payload: { title: string; body: string }) => {

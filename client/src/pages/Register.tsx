@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { post } from "@/api/client";
@@ -42,6 +42,8 @@ const RegisterPage = () => {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
 
   const { t } = useI18n();
   const setAuth = useAuthStore((state) => state.setAuth);
@@ -50,6 +52,11 @@ const RegisterPage = () => {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (submitLockRef.current || isSubmitting) {
+      return;
+    }
+    submitLockRef.current = true;
+    setIsSubmitting(true);
     try {
       const response = await post<AuthResponse>("/auth/register", {
         username,
@@ -62,6 +69,9 @@ const RegisterPage = () => {
       navigate("/app/home");
     } catch (error) {
       pushToast(t("auth.registration_failed"), error instanceof Error ? error.message : t("common.unknown_error"));
+    } finally {
+      submitLockRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -83,6 +93,7 @@ const RegisterPage = () => {
             className="h-11 w-full rounded-lg border border-white/12 bg-black/25 px-3 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/20"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
+            disabled={isSubmitting}
             required
           />
         </label>
@@ -94,6 +105,7 @@ const RegisterPage = () => {
             className="h-11 w-full rounded-lg border border-white/12 bg-black/25 px-3 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/20"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            disabled={isSubmitting}
             required
           />
         </label>
@@ -105,11 +117,12 @@ const RegisterPage = () => {
             className="h-11 w-full rounded-lg border border-white/12 bg-black/25 px-3 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/20"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            disabled={isSubmitting}
             required
           />
         </label>
 
-        <Button type="submit" className="w-full py-2.5 text-[15px]">
+        <Button type="submit" className="w-full py-2.5 text-[15px]" disabled={isSubmitting}>
           {t("auth.register_button")}
         </Button>
 

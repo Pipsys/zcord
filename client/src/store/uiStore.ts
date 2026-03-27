@@ -37,12 +37,20 @@ export const useUiStore = create<UiState>((set) => ({
       }),
     ),
   pushToast: (title, description) => {
-    void window.pawcord.notify(title, description);
+    let shouldNotify = false;
     set(
       produce<UiState>((state) => {
+        const duplicateVisible = state.toasts.some((toast) => toast.title === title && toast.description === description);
+        if (duplicateVisible) {
+          return;
+        }
+        shouldNotify = true;
         state.toasts.push({ id: crypto.randomUUID(), title, description });
       }),
     );
+    if (shouldNotify) {
+      void window.pawcord.notify(title, description);
+    }
   },
   removeToast: (id) =>
     set(

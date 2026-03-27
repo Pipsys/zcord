@@ -48,6 +48,9 @@ interface AttachmentUploadProgressPayload {
 }
 
 const pawcordApi = {
+  system: {
+    platform: process.platform,
+  },
   window: {
     minimize: () => ipcRenderer.invoke("window:minimize"),
     maximize: () => ipcRenderer.invoke("window:maximize"),
@@ -59,6 +62,7 @@ const pawcordApi = {
   auth: {
     setToken: (token: string) => ipcRenderer.invoke("auth:set-token", token),
     getToken: () => ipcRenderer.invoke("auth:get-token") as Promise<string | null>,
+    logout: () => ipcRenderer.invoke("auth:logout") as Promise<boolean>,
     clearToken: () => ipcRenderer.invoke("auth:clear-token"),
   },
   request: <T>(payload: ApiRequestPayload) => ipcRenderer.invoke("api:request", payload) as Promise<ApiResponse<T>>,

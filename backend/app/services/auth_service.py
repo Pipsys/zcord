@@ -42,6 +42,19 @@ class AuthService:
     def _token_pair(access_token: str, access_exp: datetime) -> TokenPair:
         return TokenPair(access_token=access_token, expires_at=access_exp)
 
+    @staticmethod
+    def _raise_conflict_from_integrity_error(exc: IntegrityError) -> None:
+        constraint_name = getattr(getattr(exc, "orig", None), "constraint_name", "") or ""
+        detail = constraint_name.lower()
+        raw_message = str(getattr(exc, "orig", exc)).lower()
+
+        if "users_email" in detail or "users_email" in raw_message or "ix_users_email" in raw_message:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists") from exc
+        if "users_username" in detail or "users_username" in raw_message or "ix_users_username" in raw_message:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists") from exc
+
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username or email already exists") from exc
+
     async def _issue_session(self, user: User, device_info: str | None) -> tuple[TokenPair, str, datetime]:
         access_token, access_exp = create_access_token(str(user.id), extra_claims={"username": user.username})
         refresh_token, refresh_exp = create_refresh_token(str(user.id))
@@ -76,7 +89,7 @@ class AuthService:
             await self.session.flush()
         except IntegrityError as exc:
             await self.session.rollback()
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username or email already exists") from exc
+            self._raise_conflict_from_integrity_error(exc)
 
         token_pair, refresh_token, refresh_exp = await self._issue_session(user, None)
 
@@ -144,7 +157,7 @@ class AuthService:
                 await self.session.flush()
             except IntegrityError as exc:
                 await self.session.rollback()
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="OAuth account collision") from exc
+                self._raise_conflict_from_integrity_error(exc)
 
         token_pair, refresh_token, refresh_exp = await self._issue_session(user, device_info)
         await self._audit("auth.oauth_login", user.id, ip, {"email": email})
@@ -202,4 +215,3 @@ class AuthService:
                 token.revoked_at = datetime.now(UTC)
         await self._audit("auth.logout", user_id, ip)
         await self.session.commit()
-
