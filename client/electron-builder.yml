@@ -1,0 +1,20 @@
+appId: com.pawcord.desktop
+productName: Pawcord
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+asar: true
+directories:
+  output: release
+publish: null
+win:
+  target:
+    - nsis
+  artifactName: "Pawcord-Setup-${version}.${ext}"
+mac:
+  target:
+    - dmg
+linux:
+  target:
+    - AppImage

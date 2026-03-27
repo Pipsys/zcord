@@ -1,0 +1,51 @@
+{
+  "name": "pawcord-client",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && tsc -p tsconfig.electron.json",
+    "electron:dev": "concurrently \"tsc -p tsconfig.electron.json --watch\" \"vite\" \"wait-on http://localhost:5173 dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "electron:build": "npm run build && electron-builder",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
+    "lint": "echo 'lint configured via typecheck'"
+  },
+  "dependencies": {
+    "@emoji-mart/react": "^1.1.1",
+    "@tanstack/react-query": "^5.80.0",
+    "@tanstack/react-virtual": "^3.13.12",
+    "axios": "^1.8.2",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "electron-updater": "^6.6.2",
+    "framer-motion": "^12.6.3",
+    "immer": "^10.1.1",
+    "keytar": "^7.9.0",
+    "mediasoup-client": "^3.14.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-dropzone": "^14.3.8",
+    "react-router-dom": "^6.28.1",
+    "shiki": "^1.29.2",
+    "socket.io-client": "^4.8.1",
+    "tailwind-merge": "^2.5.5",
+    "zustand": "^5.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.4.1",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.2",
+    "wait-on": "^8.0.3"
+  }
+}

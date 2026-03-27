@@ -1,0 +1,85 @@
+﻿version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pawcord}
+      POSTGRES_USER: ${POSTGRES_USER:-pawcord}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pawcord}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pawcord} -d ${POSTGRES_DB:-pawcord}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-REDIS_SECRET_REMOVED}
+    volumes:
+      - redisdata:/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-pawcord}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-MINIO_SECRET_REMOVED}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  backend:
+    build:
+      context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+    environment:
+      ENV: development
+      DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pawcord}:${POSTGRES_PASSWORD:-pawcord}@postgres:5432/${POSTGRES_DB:-pawcord}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-REDIS_SECRET_REMOVED}@redis:6379/0
+      ALLOWED_ORIGINS: '["https://localhost","http://localhost:5173"]'
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private.pem
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-pawcord}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-MINIO_SECRET_REMOVED}
+      MINIO_BUCKET: ${MINIO_BUCKET:-pawcord-media}
+      MINIO_SECURE: "false"
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+    volumes:
+      - ./backend:/app
+      - ./secrets/jwt_private.pem:/run/secrets/jwt_private.pem:ro
+      - ./secrets/jwt_public.pem:/run/secrets/jwt_public.pem:ro
+    ports:
+      - "8000:8000"
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "443:443"
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+
+

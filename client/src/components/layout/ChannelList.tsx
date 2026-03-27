@@ -1,0 +1,194 @@
+import { useMemo, useState } from "react";
+
+import { useMeQuery } from "@/api/queries";
+import { Avatar } from "@/components/ui/Avatar";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { useI18n } from "@/i18n/provider";
+import { useAuthStore } from "@/store/authStore";
+import { useChannelStore } from "@/store/channelStore";
+import { useServerStore } from "@/store/serverStore";
+
+interface ChannelListProps {
+  connectedVoiceChannelId: string | null;
+  onJoinVoice: (channelId: string) => void;
+  onLeaveVoice: () => void;
+  onCreateTextChannel: () => void;
+  onCreateVoiceChannel: () => void;
+  isCreatingChannel: boolean;
+}
+
+const HashIcon = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <path d="M10 4L8 20M16 4L14 20M4 9H20M3 15H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
+const VoiceIcon = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <path d="M5 8V16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <path d="M9 6V18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <path d="M13 4V20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <path d="M17 8V16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
+export const ChannelList = ({
+  connectedVoiceChannelId,
+  onJoinVoice,
+  onLeaveVoice,
+  onCreateTextChannel,
+  onCreateVoiceChannel,
+  isCreatingChannel,
+}: ChannelListProps) => {
+  const { t } = useI18n();
+  const user = useAuthStore((state) => state.user);
+  const { data: meUser } = useMeQuery();
+  const channels = useChannelStore((state) => state.channels);
+  const activeChannelId = useChannelStore((state) => state.activeChannelId);
+  const setActiveChannel = useChannelStore((state) => state.setActiveChannel);
+  const servers = useServerStore((state) => state.servers);
+  const activeServerId = useServerStore((state) => state.activeServerId);
+
+  const [context, setContext] = useState<{ visible: boolean; x: number; y: number; channelId: string | null }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    channelId: null,
+  });
+
+  const server = useMemo(() => servers.find((item) => item.id === activeServerId) ?? null, [servers, activeServerId]);
+  const effectiveUser = user ?? meUser ?? null;
+  const textChannels = useMemo(() => channels.filter((item) => item.type !== "voice"), [channels]);
+  const voiceChannels = useMemo(() => channels.filter((item) => item.type === "voice"), [channels]);
+
+  const actions = useMemo(
+    () => [
+      {
+        id: "rename",
+        label: t("channels.action_rename"),
+        onClick: () => setContext((value) => ({ ...value, visible: false })),
+      },
+      {
+        id: "mute",
+        label: t("channels.action_mute"),
+        onClick: () => setContext((value) => ({ ...value, visible: false })),
+      },
+    ],
+    [t],
+  );
+
+  return (
+    <section className="flex h-full w-60 flex-col border-r border-white/10 bg-black/20 backdrop-blur-sm">
+      <header className="h-12 border-b border-white/10 px-4">
+        <div className="flex h-full items-center justify-between">
+          <h2 className="truncate text-[15px] font-semibold text-paw-text-primary">{server?.name ?? "Server"}</h2>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 py-3" onClick={() => setContext((value) => ({ ...value, visible: false }))}>
+        <div>
+          <div className="flex items-center justify-between px-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-paw-text-muted">{t("channels.text_channels")}</p>
+            <button
+              type="button"
+              title={t("channels.create_text_channel")}
+              aria-label={t("channels.create_text_channel")}
+              disabled={isCreatingChannel}
+              onClick={onCreateTextChannel}
+              className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition hover:bg-white/10 hover:text-paw-text-secondary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              +
+            </button>
+          </div>
+          <div className="mt-1 space-y-0.5">
+            {textChannels.length === 0 ? <p className="px-2 py-1 text-xs text-paw-text-muted">{t("channels.empty")}</p> : null}
+            {textChannels.map((channel) => {
+              const active = activeChannelId === channel.id;
+              return (
+                <button
+                  key={channel.id}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setContext({ visible: true, x: event.clientX, y: event.clientY, channelId: channel.id });
+                  }}
+                  onClick={() => setActiveChannel(channel.id)}
+                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[15px] transition ${
+                    active ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/60 hover:text-paw-text-secondary"
+                  }`}
+                >
+                  <span className="text-paw-text-muted">
+                    <HashIcon />
+                  </span>
+                  <span className="truncate">{channel.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between px-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-paw-text-muted">{t("channels.voice_channels")}</p>
+            <button
+              type="button"
+              title={t("channels.create_voice_channel")}
+              aria-label={t("channels.create_voice_channel")}
+              disabled={isCreatingChannel}
+              onClick={onCreateVoiceChannel}
+              className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition hover:bg-white/10 hover:text-paw-text-secondary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              +
+            </button>
+          </div>
+          <div className="mt-1 space-y-0.5">
+            {voiceChannels.length === 0 ? <p className="px-2 py-1 text-xs text-paw-text-muted">{t("channels.empty")}</p> : null}
+            {voiceChannels.map((channel) => {
+              const active = activeChannelId === channel.id;
+              const connected = connectedVoiceChannelId === channel.id;
+              return (
+                <div
+                  key={channel.id}
+                  className={`flex items-center gap-2 rounded px-2 py-1.5 text-[14px] ${
+                    active ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/60"
+                  }`}
+                >
+                  <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setActiveChannel(channel.id)}>
+                    <span>
+                      <VoiceIcon />
+                    </span>
+                    <span className="truncate">{channel.name}</span>
+                  </button>
+
+                  <button
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${connected ? "bg-[#3ba55d] text-white" : "bg-white/10 text-paw-text-secondary"}`}
+                    onClick={() => {
+                      if (connected) {
+                        onLeaveVoice();
+                      } else {
+                        onJoinVoice(channel.id);
+                      }
+                    }}
+                  >
+                    {connected ? t("channels.leave_voice") : t("channels.join_voice")}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <footer className="border-t border-white/10 bg-black/20 px-2 py-2">
+        <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-2">
+          <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-paw-text-secondary">{effectiveUser?.username ?? "guest"}</p>
+            <p className="truncate text-xs text-paw-text-muted">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
+          </div>
+        </div>
+      </footer>
+
+      <ContextMenu visible={context.visible} x={context.x} y={context.y} actions={actions} />
+    </section>
+  );
+};
