@@ -6,6 +6,7 @@ import { useChannelStore } from "@/store/channelStore";
 import { useMessageStore } from "@/store/messageStore";
 import { useServerStore } from "@/store/serverStore";
 import { useUiStore } from "@/store/uiStore";
+import { useVoiceStore } from "@/store/voiceStore";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -47,6 +48,7 @@ const resetClientSession = (
   useServerStore.setState({ servers: [], activeServerId: null });
   useChannelStore.setState({ channels: [], activeChannelId: null });
   useMessageStore.setState({ byChannel: {}, receiptsByMessage: {}, typingByChannel: {} });
+  useVoiceStore.getState().reset();
   useUiStore.setState({ toasts: [] });
 
   set(

@@ -1,16 +1,21 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import WebSocket
+from fastapi import HTTPException, WebSocket
 from jose import JWTError
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal
+from app.models.channel import Channel, ChannelType
 from app.models.message import Message, MessageReceipt
+from app.models.user import User
+from app.services.channel_access_service import assert_user_can_access_channel
+from app.services.media_service import MediaService
 from app.services.token_revocation_service import is_jti_revoked
 from app.utils.jwt_utils import decode_token
 from app.websocket.events import ClientEventType, GatewayEventType
@@ -113,6 +118,53 @@ async def _persist_message_receipt(
 
         await session.commit()
         return changed_at
+
+
+async def _validate_voice_channel_access(channel_id: str, user_id: str) -> Channel | None:
+    try:
+        channel_uuid = UUID(channel_id)
+        user_uuid = UUID(user_id)
+    except ValueError:
+        return None
+
+    async with AsyncSessionLocal() as session:
+        channel = await session.get(Channel, channel_uuid)
+        if channel is None:
+            return None
+        if channel.type != ChannelType.voice:
+            return None
+
+        try:
+            await assert_user_can_access_channel(session, channel, user_uuid)
+        except HTTPException:
+            return None
+
+        return channel
+
+
+async def _load_voice_user_profile(user_id: str) -> tuple[str | None, str | None]:
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        return None, None
+
+    async with AsyncSessionLocal() as session:
+        row = (
+            await session.execute(
+                select(User.username, User.avatar_url).where(User.id == user_uuid)
+            )
+        ).one_or_none()
+        if row is None:
+            return None, None
+
+        media_service = MediaService(session)
+        return row.username, media_service.resolve_public_url(row.avatar_url)
+
+
+def _coerce_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
 
 
 async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[str, Any]) -> None:
@@ -227,22 +279,146 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
             await manager.publish_dm(channel_id, payload)
         return
 
-    if event_type == ClientEventType.VOICE_SIGNAL.value:
-        payload = {
-            "op": "DISPATCH",
-            "t": GatewayEventType.VOICE_STATE_UPDATE.value,
-            "d": {
-                "user_id": user_id,
-                "channel_id": data.get("channel_id"),
-                "signal": data,
-            },
-        }
-        server_id = data.get("server_id")
+    if event_type == ClientEventType.VOICE_JOIN.value:
         channel_id = data.get("channel_id")
-        if isinstance(server_id, str):
-            await manager.publish_server(server_id, payload)
-        elif isinstance(channel_id, str):
-            await manager.publish_dm(channel_id, payload)
+        if not isinstance(channel_id, str):
+            return
+
+        channel = await _validate_voice_channel_access(channel_id, user_id)
+        if channel is None:
+            await websocket.send_json(
+                {
+                    "op": "ERROR",
+                    "t": "VOICE_JOIN_REJECTED",
+                    "d": {"detail": "Cannot join voice channel"},
+                }
+            )
+            return
+
+        server_id = str(channel.server_id) if channel.server_id else None
+        username, avatar_url = await _load_voice_user_profile(user_id)
+        participants, joined_member, left_member = await manager.join_voice(
+            channel_id=channel_id,
+            server_id=server_id,
+            user_id=user_id,
+            username=username,
+            avatar_url=avatar_url,
+            websocket=websocket,
+        )
+
+        if left_member is not None:
+            await manager.publish_voice(
+                left_member["channel_id"],
+                {
+                    "op": "DISPATCH",
+                    "t": GatewayEventType.VOICE_USER_LEFT.value,
+                    "d": left_member,
+                },
+            )
+
+        if joined_member is not None:
+            await manager.publish_voice(
+                channel_id,
+                {
+                    "op": "DISPATCH",
+                    "t": GatewayEventType.VOICE_USER_JOINED.value,
+                    "d": joined_member,
+                },
+                exclude={websocket},
+            )
+
+        await websocket.send_json(
+            {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_PARTICIPANTS_SNAPSHOT.value,
+                "d": {
+                    "channel_id": channel_id,
+                    "server_id": server_id,
+                    "participants": participants,
+                },
+            }
+        )
+        return
+
+    if event_type == ClientEventType.VOICE_LEAVE.value:
+        left_member = await manager.leave_voice(user_id=user_id, websocket=websocket)
+        if left_member is None:
+            return
+
+        await manager.publish_voice(
+            left_member["channel_id"],
+            {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_USER_LEFT.value,
+                "d": left_member,
+            },
+        )
+
+        await websocket.send_json(
+            {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_LEAVE.value,
+                "d": {
+                    "channel_id": left_member["channel_id"],
+                    "server_id": left_member.get("server_id"),
+                    "user_id": user_id,
+                },
+            }
+        )
+        return
+
+    if event_type == ClientEventType.VOICE_SIGNAL.value:
+        member = manager.get_joined_voice_member(websocket, user_id)
+        if member is None:
+            return
+
+        channel_id = data.get("channel_id")
+        signal_type = data.get("signal_type")
+        signal_payload = data.get("payload")
+        if not isinstance(channel_id, str) or channel_id != member.get("channel_id"):
+            return
+        if signal_type not in {"offer", "answer", "ice-candidate"}:
+            return
+        if not isinstance(signal_payload, dict):
+            return
+
+        target_user_id = data.get("target_user_id")
+        await manager.publish_voice(
+            channel_id,
+            {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_SIGNAL.value,
+                "d": {
+                    "channel_id": channel_id,
+                    "server_id": member.get("server_id"),
+                    "user_id": user_id,
+                    "target_user_id": target_user_id if isinstance(target_user_id, str) else None,
+                    "signal_type": signal_type,
+                    "payload": signal_payload,
+                },
+            },
+            exclude={websocket},
+        )
+        return
+
+    if event_type == ClientEventType.VOICE_STATE_UPDATE.value:
+        muted = _coerce_bool(data.get("muted"))
+        deafened = _coerce_bool(data.get("deafened"))
+        if muted is None and deafened is None:
+            return
+
+        member = await manager.update_voice_state(user_id=user_id, websocket=websocket, muted=muted, deafened=deafened)
+        if member is None:
+            return
+
+        await manager.publish_voice(
+            member["channel_id"],
+            {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_STATE_UPDATE.value,
+                "d": member,
+            },
+        )
         return
 
     await websocket.send_json(

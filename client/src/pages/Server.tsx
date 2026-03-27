@@ -19,6 +19,7 @@ import { MemberList } from "@/components/layout/MemberList";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useVoiceRoom } from "@/hooks/useVoiceRoom";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
@@ -42,10 +43,10 @@ const ServerPage = () => {
   const { t } = useI18n();
   const { serverId } = useParams();
   const socket = useWebSocket();
+  const voiceRoom = useVoiceRoom(socket);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const currentUsername = useAuthStore((state) => state.user?.username ?? null);
 
-  const [connectedVoiceChannelId, setConnectedVoiceChannelId] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; preview: string } | null>(null);
   const [editingMessage, setEditingMessage] = useState<{ id: string; preview: string } | null>(null);
   const [draftPreset, setDraftPreset] = useState<{ key: string; text: string; mode?: "replace" | "append" } | null>(null);
@@ -395,12 +396,12 @@ const ServerPage = () => {
       <Sidebar />
 
       <ChannelList
-        connectedVoiceChannelId={connectedVoiceChannelId}
+        connectedVoiceChannelId={voiceRoom.connectedChannelId}
         onJoinVoice={(channelId) => {
-          setConnectedVoiceChannelId(channelId);
           setActiveChannel(channelId);
+          void voiceRoom.join(channelId, serverId ?? null);
         }}
-        onLeaveVoice={() => setConnectedVoiceChannelId(null)}
+        onLeaveVoice={() => void voiceRoom.leave()}
         onCreateTextChannel={() => void handleCreateTextChannel()}
         onCreateVoiceChannel={() => void handleCreateVoiceChannel()}
         isCreatingChannel={createChannel.isPending}
@@ -448,10 +449,19 @@ const ServerPage = () => {
           {activeChannel?.type === "voice" ? (
             <Suspense fallback={<div className="p-4 text-sm text-paw-text-muted">{t("server.loading_voice")}</div>}>
               <VoiceChannel
+                channelId={activeChannel.id}
                 channelName={activeChannelName}
-                connected={connectedVoiceChannelId === activeChannel.id}
-                onConnect={() => setConnectedVoiceChannelId(activeChannel.id)}
-                onDisconnect={() => setConnectedVoiceChannelId(null)}
+                connected={voiceRoom.connectedChannelId === activeChannel.id}
+                participants={voiceRoom.connectedChannelId === activeChannel.id ? voiceRoom.participants : []}
+                remoteStreams={voiceRoom.remoteStreams}
+                muted={voiceRoom.muted}
+                deafened={voiceRoom.deafened}
+                volume={voiceRoom.volume}
+                onConnect={() => void voiceRoom.join(activeChannel.id, serverId ?? null)}
+                onLeave={() => void voiceRoom.leave()}
+                onToggleMute={voiceRoom.toggleMuted}
+                onToggleDeafen={voiceRoom.toggleDeafened}
+                onVolumeChange={voiceRoom.setVolume}
               />
             </Suspense>
           ) : null}

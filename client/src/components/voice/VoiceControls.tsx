@@ -29,8 +29,18 @@ export const VoiceControls = ({ muted, deafened, connected, onToggleMute, onTogg
         {deafened ? t("voice.undeafen") : t("voice.deafen")}
       </button>
 
-      <button className="rounded-md border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary hover:text-paw-text-primary">{t("voice.screen_share")}</button>
-      <button className="rounded-md border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary hover:text-paw-text-primary">{t("voice.video")}</button>
+      <button
+        disabled
+        className="cursor-not-allowed rounded-md border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-muted opacity-60"
+      >
+        {t("voice.screen_share")}
+      </button>
+      <button
+        disabled
+        className="cursor-not-allowed rounded-md border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-muted opacity-60"
+      >
+        {t("voice.video")}
+      </button>
 
       {connected ? (
         <button onClick={onLeave} className="rounded-md border border-white/10 bg-[#da373c] px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110">

@@ -11,7 +11,7 @@ from app.middleware.cors import setup_cors
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import problem_details_exception_handler, setup_rate_limiter
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import auth, channels, friends, media, messages, servers, users, voice
+from app.routers import auth, channels, friends, media, messages, servers, users
 from app.websocket.events import GatewayEventType
 from app.websocket.handlers import authenticate_websocket_token, handle_client_event, rate_limiter
 from app.websocket.manager import manager
@@ -88,7 +88,6 @@ app.include_router(channels.router, prefix=settings.api_prefix)
 app.include_router(messages.router, prefix=settings.api_prefix)
 app.include_router(friends.router, prefix=settings.api_prefix)
 app.include_router(media.router, prefix=settings.api_prefix)
-app.include_router(voice.router)
 
 
 @app.get("/health")
@@ -124,6 +123,15 @@ async def websocket_gateway(websocket: WebSocket):
             await handle_client_event(user_id, websocket, event)
     except WebSocketDisconnect:
         rate_limiter.clear(websocket)
-        await manager.disconnect(user_id, websocket)
+        left_member = await manager.disconnect(user_id, websocket)
+        if left_member is not None:
+            await manager.publish_voice(
+                left_member["channel_id"],
+                {
+                    "op": "DISPATCH",
+                    "t": GatewayEventType.VOICE_USER_LEFT.value,
+                    "d": left_member,
+                },
+            )
 
 

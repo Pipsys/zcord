@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAuthStore } from "@/store/authStore";
 import { useMessageStore } from "@/store/messageStore";
+import { useVoiceStore } from "@/store/voiceStore";
 import type { GatewayEvent, Message } from "@/types";
 
 interface ReceiptPayload {
@@ -22,6 +23,30 @@ interface MessageDeletedPayload {
   channel_id: string;
   server_id: string | null;
   deleted_at: string;
+}
+
+interface VoiceParticipantPayload {
+  user_id: string;
+  channel_id: string;
+  server_id: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  muted: boolean;
+  deafened: boolean;
+}
+
+interface VoiceSnapshotPayload {
+  channel_id: string;
+  participants: VoiceParticipantPayload[];
+}
+
+interface VoiceSignalPayload {
+  channel_id: string;
+  server_id: string | null;
+  user_id: string;
+  target_user_id: string | null;
+  signal_type: "offer" | "answer" | "ice-candidate";
+  payload: Record<string, unknown>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
@@ -141,10 +166,80 @@ const parseMessageDeletedPayload = (value: unknown): MessageDeletedPayload | nul
   };
 };
 
+const parseVoiceParticipant = (value: unknown): VoiceParticipantPayload | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const userId = value.user_id;
+  const channelId = value.channel_id;
+  if (typeof userId !== "string" || typeof channelId !== "string") {
+    return null;
+  }
+
+  return {
+    user_id: userId,
+    channel_id: channelId,
+    server_id: typeof value.server_id === "string" ? value.server_id : null,
+    username: typeof value.username === "string" ? value.username : null,
+    avatar_url: typeof value.avatar_url === "string" ? value.avatar_url : null,
+    muted: typeof value.muted === "boolean" ? value.muted : false,
+    deafened: typeof value.deafened === "boolean" ? value.deafened : false,
+  };
+};
+
+const parseVoiceSnapshot = (value: unknown): VoiceSnapshotPayload | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const channelId = value.channel_id;
+  const participants = value.participants;
+  if (typeof channelId !== "string" || !Array.isArray(participants)) {
+    return null;
+  }
+
+  const parsed = participants
+    .map((participant) => parseVoiceParticipant(participant))
+    .filter((item): item is VoiceParticipantPayload => item !== null)
+    .map((participant) => ({ ...participant, channel_id: channelId }));
+
+  return { channel_id: channelId, participants: parsed };
+};
+
+const parseVoiceSignal = (value: unknown): VoiceSignalPayload | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const channelId = value.channel_id;
+  const userId = value.user_id;
+  const signalType = value.signal_type;
+  const signalPayload = value.payload;
+  if (typeof channelId !== "string" || typeof userId !== "string") {
+    return null;
+  }
+  if (signalType !== "offer" && signalType !== "answer" && signalType !== "ice-candidate") {
+    return null;
+  }
+  if (!isRecord(signalPayload)) {
+    return null;
+  }
+
+  return {
+    channel_id: channelId,
+    server_id: typeof value.server_id === "string" ? value.server_id : null,
+    user_id: userId,
+    target_user_id: typeof value.target_user_id === "string" ? value.target_user_id : null,
+    signal_type: signalType,
+    payload: signalPayload,
+  };
+};
+
 const getWebSocketCandidates = (): string[] => {
   const configured = import.meta.env.VITE_WS_URL;
+  const isDevMode = Boolean(import.meta.env.DEV);
   const candidates = [
     typeof configured === "string" ? configured.trim() : "",
+    ...(isDevMode ? [] : ["wss://pawcord.ru/ws/gateway", "wss://www.pawcord.ru/ws/gateway"]),
     "ws://localhost:8000/ws/gateway",
     "ws://127.0.0.1:8000/ws/gateway",
     "wss://localhost/ws/gateway",
@@ -163,6 +258,11 @@ export const useWebSocket = (): WebSocket | null => {
   const setTyping = useMessageStore((state) => state.setTyping);
   const clearTyping = useMessageStore((state) => state.clearTyping);
   const pruneTyping = useMessageStore((state) => state.pruneTyping);
+  const setParticipantsSnapshot = useVoiceStore((state) => state.setParticipantsSnapshot);
+  const upsertParticipant = useVoiceStore((state) => state.upsertParticipant);
+  const removeParticipant = useVoiceStore((state) => state.removeParticipant);
+  const updateParticipantState = useVoiceStore((state) => state.updateParticipantState);
+  const enqueueSignal = useVoiceStore((state) => state.enqueueSignal);
 
   const deliveryAckedRef = useRef<Set<string>>(new Set());
   const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -314,6 +414,61 @@ export const useWebSocket = (): WebSocket | null => {
           if (typing.user_id !== currentUserId) {
             setTyping(typing.channel_id, typing.user_id, typing.expires_at);
           }
+          return;
+        }
+
+        if (payload.t === "VOICE_PARTICIPANTS_SNAPSHOT") {
+          const snapshot = parseVoiceSnapshot(payload.d);
+          if (!snapshot) {
+            return;
+          }
+          setParticipantsSnapshot(snapshot.channel_id, snapshot.participants);
+          return;
+        }
+
+        if (payload.t === "VOICE_USER_JOINED") {
+          const participant = parseVoiceParticipant(payload.d);
+          if (!participant) {
+            return;
+          }
+          upsertParticipant(participant.channel_id, participant);
+          return;
+        }
+
+        if (payload.t === "VOICE_USER_LEFT") {
+          const participant = parseVoiceParticipant(payload.d);
+          if (!participant) {
+            return;
+          }
+          removeParticipant(participant.channel_id, participant.user_id);
+          return;
+        }
+
+        if (payload.t === "VOICE_STATE_UPDATE") {
+          const participant = parseVoiceParticipant(payload.d);
+          if (!participant) {
+            return;
+          }
+          updateParticipantState(
+            participant.channel_id,
+            participant.user_id,
+            participant.muted,
+            participant.deafened,
+            participant.username,
+            participant.avatar_url,
+          );
+          return;
+        }
+
+        if (payload.t === "VOICE_SIGNAL") {
+          const signal = parseVoiceSignal(payload.d);
+          if (!signal) {
+            return;
+          }
+          if (signal.user_id === currentUserId) {
+            return;
+          }
+          enqueueSignal(signal);
         }
       };
 
@@ -344,7 +499,7 @@ export const useWebSocket = (): WebSocket | null => {
       ws?.close();
       setSocket((current) => (current === ws ? null : current));
     };
-  }, [clearTyping, currentUserId, deleteMessage, markDelivered, markRead, setTyping, token, upsertMessage]);
+  }, [clearTyping, currentUserId, deleteMessage, enqueueSignal, markDelivered, markRead, removeParticipant, setParticipantsSnapshot, setTyping, token, updateParticipantState, upsertMessage, upsertParticipant]);
 
   return socket;
 };

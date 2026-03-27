@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import enum
 from datetime import datetime
@@ -26,6 +26,12 @@ class GatewayEventType(str, enum.Enum):
     MEMBER_UPDATE = "MEMBER_UPDATE"
     PRESENCE_UPDATE = "PRESENCE_UPDATE"
     TYPING_START = "TYPING_START"
+    VOICE_JOIN = "VOICE_JOIN"
+    VOICE_LEAVE = "VOICE_LEAVE"
+    VOICE_PARTICIPANTS_SNAPSHOT = "VOICE_PARTICIPANTS_SNAPSHOT"
+    VOICE_USER_JOINED = "VOICE_USER_JOINED"
+    VOICE_USER_LEFT = "VOICE_USER_LEFT"
+    VOICE_SIGNAL = "VOICE_SIGNAL"
     VOICE_STATE_UPDATE = "VOICE_STATE_UPDATE"
     SERVER_CREATE = "SERVER_CREATE"
     SERVER_UPDATE = "SERVER_UPDATE"
@@ -40,7 +46,10 @@ class ClientEventType(str, enum.Enum):
     TYPING = "TYPING"
     MESSAGE_DELIVERED_ACK = "MESSAGE_DELIVERED_ACK"
     MESSAGE_READ_ACK = "MESSAGE_READ_ACK"
+    VOICE_JOIN = "VOICE_JOIN"
+    VOICE_LEAVE = "VOICE_LEAVE"
     VOICE_SIGNAL = "VOICE_SIGNAL"
+    VOICE_STATE_UPDATE = "VOICE_STATE_UPDATE"
 
 
 class EventEnvelope(StrictSchema):
@@ -58,5 +67,6 @@ class TypingPayload(StrictSchema):
 class VoiceSignalPayload(StrictSchema):
     channel_id: str
     user_id: str
+    target_user_id: str | None = None
     signal_type: str = Field(pattern="^(offer|answer|ice-candidate)$")
     payload: dict[str, Any]
