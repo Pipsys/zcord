@@ -1,0 +1,62 @@
+name: Build macOS Client Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "client/**"
+      - ".github/workflows/client-macos-installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13
+            arch: x64
+          - os: macos-14
+            arch: arm64
+
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer and electron main
+        run: npm run build
+
+      - name: Build unsigned DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --mac dmg --${{ matrix.arch }} --publish never --config.directories.output=release-macos-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rucord-macos-${{ matrix.arch }}
+          path: |
+            client/release-macos-${{ matrix.arch }}/*.dmg
+            client/release-macos-${{ matrix.arch }}/*.zip
+            client/release-macos-${{ matrix.arch }}/*.blockmap
+          if-no-files-found: error

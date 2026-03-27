@@ -1,5 +1,5 @@
 {
-  "name": "pawcord-client",
+  "name": "rucord-client",
   "version": "0.1.0",
   "private": true,
   "main": "dist-electron/main.js",
@@ -8,6 +8,7 @@
     "build": "vite build && tsc -p tsconfig.electron.json",
     "electron:dev": "concurrently \"tsc -p tsconfig.electron.json --watch\" \"vite\" \"wait-on http://localhost:5173 dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "electron:build": "npm run build && electron-builder",
+    "electron:build:mac": "npm run build && electron-builder --mac dmg --publish never",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
     "lint": "echo 'lint configured via typecheck'"
   },
