@@ -2,6 +2,9 @@ name: Build macOS Client Installer
 
 on:
   workflow_dispatch:
+  release:
+    types:
+      - published
   push:
     branches:
       - main
@@ -10,7 +13,7 @@ on:
       - ".github/workflows/client-macos-installer.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-macos:
@@ -60,3 +63,27 @@ jobs:
             client/release-macos-${{ matrix.arch }}/*.zip
             client/release-macos-${{ matrix.arch }}/*.blockmap
           if-no-files-found: error
+
+  publish-release-assets:
+    name: Attach macOS installers to GitHub Release
+    if: github.event_name == 'release'
+    needs:
+      - build-macos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rucord-macos-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            release-assets/*.dmg
+            release-assets/*.zip
+            release-assets/*.blockmap
+          fail_on_unmatched_files: true
