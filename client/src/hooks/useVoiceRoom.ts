@@ -61,6 +61,7 @@ const buildIceServers = (): RTCIceServer[] => {
 
 const ICE_SERVERS = buildIceServers();
 const DEFAULT_INPUT_DEVICE_ID = "default";
+const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
 
 export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
@@ -80,6 +81,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const disconnectTimersRef = useRef<Map<string, number>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
@@ -233,6 +235,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   }, []);
 
   const closePeer = useCallback((remoteUserId: string) => {
+    const disconnectTimer = disconnectTimersRef.current.get(remoteUserId);
+    if (disconnectTimer) {
+      window.clearTimeout(disconnectTimer);
+      disconnectTimersRef.current.delete(remoteUserId);
+    }
+
     const peer = peersRef.current.get(remoteUserId);
     if (peer) {
       peer.onicecandidate = null;
@@ -250,6 +258,11 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   }, []);
 
   const closeAllPeers = useCallback(() => {
+    for (const timer of disconnectTimersRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    disconnectTimersRef.current.clear();
+
     const userIds = Array.from(peersRef.current.keys());
     for (const remoteUserId of userIds) {
       closePeer(remoteUserId);
@@ -297,6 +310,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         return existing;
       }
 
+      console.info("[voice] creating peer", {
+        remoteUserId,
+        channelId,
+        serverId,
+        iceServers: ICE_SERVERS,
+      });
       const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       const localStream = localStreamRef.current;
       if (localStream) {
@@ -323,11 +342,45 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         if (!stream) {
           return;
         }
+        console.info("[voice] remote track received", {
+          remoteUserId,
+          trackId: event.track.id,
+          streamId: stream.id,
+        });
         setRemoteStreams((current) => ({ ...current, [remoteUserId]: stream }));
       };
 
       peer.onconnectionstatechange = () => {
-        if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+        const state = peer.connectionState;
+        console.info("[voice] peer connection state", { remoteUserId, state });
+
+        if (state === "connected" || state === "connecting") {
+          const timer = disconnectTimersRef.current.get(remoteUserId);
+          if (timer) {
+            window.clearTimeout(timer);
+            disconnectTimersRef.current.delete(remoteUserId);
+          }
+          return;
+        }
+
+        if (state === "disconnected") {
+          if (!disconnectTimersRef.current.has(remoteUserId)) {
+            const timer = window.setTimeout(() => {
+              const currentPeer = peersRef.current.get(remoteUserId);
+              if (!currentPeer) {
+                return;
+              }
+              if (currentPeer.connectionState === "disconnected") {
+                console.warn("[voice] closing disconnected peer after timeout", { remoteUserId });
+                closePeer(remoteUserId);
+              }
+            }, DISCONNECTED_CLOSE_DELAY_MS);
+            disconnectTimersRef.current.set(remoteUserId, timer);
+          }
+          return;
+        }
+
+        if (state === "failed" || state === "closed") {
           closePeer(remoteUserId);
         }
       };
@@ -591,6 +644,13 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
         if (signal.signal_type === "offer") {
           try {
+            if (peer.signalingState !== "stable") {
+              try {
+                await peer.setLocalDescription({ type: "rollback" } as RTCSessionDescriptionInit);
+              } catch {
+                // If rollback is unsupported here, continue with remote offer attempt.
+              }
+            }
             await peer.setRemoteDescription(new RTCSessionDescription(signal.payload as unknown as RTCSessionDescriptionInit));
             await flushPendingCandidates(signal.user_id, peer);
             const answer = await peer.createAnswer();

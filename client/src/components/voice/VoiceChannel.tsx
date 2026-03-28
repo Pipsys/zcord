@@ -98,8 +98,12 @@ export const VoiceChannel = ({
       }
       audio.muted = deafened;
       audio.volume = volume;
-      void audio.play().catch(() => {
-        // Browser/electron autoplay guard. User can still unmute/reconnect manually.
+      void audio.play().catch((error) => {
+        // Keep the app running, but surface autoplay/device issues in devtools logs.
+        console.warn("[voice] failed to start remote audio playback", {
+          userId: participant.user_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
     }
   }, [deafened, remoteStreams, user?.id, visibleParticipants, volume]);
