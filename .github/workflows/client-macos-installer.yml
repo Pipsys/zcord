@@ -2,6 +2,11 @@ name: Build Client Installers
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing release tag to upload assets to (example: v0.1.2)"
+        required: false
+        type: string
   release:
     types:
       - published
@@ -97,12 +102,21 @@ jobs:
 
   publish-release-assets:
     name: Attach installers to GitHub Release
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
     needs:
       - build-windows
       - build-macos
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve target tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "value=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -113,7 +127,7 @@ jobs:
       - name: Upload assets to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ steps.tag.outputs.value }}
           overwrite_files: true
           files: |
             release-assets/*.exe
