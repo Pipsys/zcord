@@ -8,6 +8,7 @@ const SERVICE_NAME = "pawcord-desktop";
 const ACCESS_ACCOUNT_NAME = "auth-token";
 const REFRESH_ACCOUNT_NAME = "refresh-token";
 const isMac = process.platform === "darwin";
+const useMacCompatibilityMode = process.platform === "darwin";
 const ALLOWED_MEDIA_PERMISSIONS = new Set(["media", "audioCapture", "videoCapture", "display-capture"]);
 
 let mainWindow: BrowserWindow | null = null;
@@ -248,14 +249,14 @@ const createWindow = async (): Promise<void> => {
     frame: isMac,
     titleBarStyle: isMac ? "hiddenInset" : "hidden",
     trafficLightPosition: isMac ? { x: 16, y: 14 } : undefined,
-    vibrancy: isMac ? "sidebar" : undefined,
-    visualEffectState: isMac ? "active" : undefined,
+    vibrancy: useMacCompatibilityMode ? undefined : isMac ? "sidebar" : undefined,
+    visualEffectState: useMacCompatibilityMode ? undefined : isMac ? "active" : undefined,
     backgroundColor: "#0f0e14",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: !useMacCompatibilityMode,
       devTools: process.env.NODE_ENV !== "production",
       webSecurity: true,
     },
