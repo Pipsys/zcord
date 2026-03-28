@@ -41,16 +41,18 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 try {
+  const appTree = (
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </I18nProvider>
+    </QueryClientProvider>
+  );
+
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <I18nProvider>
-          <HashRouter>
-            <App />
-          </HashRouter>
-        </I18nProvider>
-      </QueryClientProvider>
-    </React.StrictMode>,
+    import.meta.env.DEV ? appTree : <React.StrictMode>{appTree}</React.StrictMode>,
   );
 } catch (error) {
   const details = error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error);

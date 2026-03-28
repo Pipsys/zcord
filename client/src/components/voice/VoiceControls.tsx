@@ -77,7 +77,7 @@ export const VoiceControls = ({
         >
           {inputDevices.map((device: VoiceInputDevice) => (
             <option key={device.deviceId} value={device.deviceId}>
-              {device.deviceId === "default" ? t("voice.input_default") : device.label}
+              {device.deviceId === "__system_default__" ? t("voice.input_default") : device.label}
             </option>
           ))}
         </select>

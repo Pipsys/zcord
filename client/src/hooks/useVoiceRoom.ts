@@ -60,8 +60,32 @@ const buildIceServers = (): RTCIceServer[] => {
 };
 
 const ICE_SERVERS = buildIceServers();
-const DEFAULT_INPUT_DEVICE_ID = "default";
+const DEFAULT_INPUT_DEVICE_ID = "__system_default__";
 const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
+
+const stringifyVoicePayload = (payload: unknown): string => {
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return String(payload);
+  }
+};
+
+const voiceLog = (message: string, payload?: unknown): void => {
+  if (typeof payload === "undefined") {
+    console.info(`[voice] ${message}`);
+    return;
+  }
+  console.info(`[voice] ${message} ${stringifyVoicePayload(payload)}`);
+};
+
+const voiceWarn = (message: string, payload?: unknown): void => {
+  if (typeof payload === "undefined") {
+    console.warn(`[voice] ${message}`);
+    return;
+  }
+  console.warn(`[voice] ${message} ${stringifyVoicePayload(payload)}`);
+};
 
 export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
@@ -140,10 +164,23 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
   const sendGatewayEvent = useCallback(
     (type: string, data: Record<string, unknown>): boolean => {
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (!socket) {
+        if (type.startsWith("VOICE")) {
+          voiceWarn("send skipped: no socket", { type, data });
+        }
         return false;
       }
+      if (socket.readyState !== WebSocket.OPEN) {
+        if (type.startsWith("VOICE")) {
+          voiceWarn("send skipped: socket not open", { type, readyState: socket.readyState, data });
+        }
+        return false;
+      }
+
       socket.send(JSON.stringify({ t: type, d: data }));
+      if (type.startsWith("VOICE")) {
+        voiceLog("send", { type, data });
+      }
       return true;
     },
     [socket],
@@ -198,13 +235,22 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const audioInputs = devices.filter((device) => device.kind === "audioinput");
-      const nextDevices: VoiceInputDevice[] = [
-        { deviceId: DEFAULT_INPUT_DEVICE_ID, label: "Default microphone" },
-        ...audioInputs.map((device, index) => ({
-          deviceId: device.deviceId,
-          label: device.label && device.label.trim().length > 0 ? device.label : `Microphone ${index + 1}`,
-        })),
-      ];
+      const nextDevices: VoiceInputDevice[] = [{ deviceId: DEFAULT_INPUT_DEVICE_ID, label: "Default microphone" }];
+      const seenDeviceIds = new Set<string>([DEFAULT_INPUT_DEVICE_ID]);
+
+      let generatedIndex = 1;
+      for (const device of audioInputs) {
+        const deviceId = typeof device.deviceId === "string" ? device.deviceId : "";
+        if (!deviceId || seenDeviceIds.has(deviceId)) {
+          continue;
+        }
+        seenDeviceIds.add(deviceId);
+        nextDevices.push({
+          deviceId,
+          label: device.label && device.label.trim().length > 0 ? device.label : `Microphone ${generatedIndex}`,
+        });
+        generatedIndex += 1;
+      }
 
       setInputDevices(nextDevices);
       const hasSelected = nextDevices.some((device) => device.deviceId === selectedInputDeviceId);
@@ -310,7 +356,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         return existing;
       }
 
-      console.info("[voice] creating peer", {
+      voiceLog("creating peer", {
         remoteUserId,
         channelId,
         serverId,
@@ -342,7 +388,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         if (!stream) {
           return;
         }
-        console.info("[voice] remote track received", {
+        voiceLog("remote track received", {
           remoteUserId,
           trackId: event.track.id,
           streamId: stream.id,
@@ -352,7 +398,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       peer.onconnectionstatechange = () => {
         const state = peer.connectionState;
-        console.info("[voice] peer connection state", { remoteUserId, state });
+        voiceLog("peer connection state", { remoteUserId, state });
 
         if (state === "connected" || state === "connecting") {
           const timer = disconnectTimersRef.current.get(remoteUserId);
@@ -371,7 +417,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
                 return;
               }
               if (currentPeer.connectionState === "disconnected") {
-                console.warn("[voice] closing disconnected peer after timeout", { remoteUserId });
+                voiceWarn("closing disconnected peer after timeout", { remoteUserId });
                 closePeer(remoteUserId);
               }
             }, DISCONNECTED_CLOSE_DELAY_MS);
@@ -442,6 +488,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       const hasSnapshot = await waitForParticipantsSnapshot(channelId);
       if (!hasSnapshot) {
+        voiceWarn("participants snapshot timeout", { channelId });
         pendingInitialOffersChannelRef.current = null;
         stopLocalStream();
         closeAllPeers();
@@ -451,6 +498,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         return false;
       }
 
+      voiceLog("join completed", { channelId, serverId, participantsCount: useVoiceStore.getState().participantsByChannel[channelId]?.length ?? 0 });
       return true;
     },
     [
@@ -587,6 +635,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         try {
           const offer = await peer.createOffer();
           await peer.setLocalDescription(offer);
+          voiceLog("sending offer", {
+            channelId: connectedChannelId,
+            remoteUserId: participant.user_id,
+          });
           sendGatewayEvent("VOICE_SIGNAL", {
             channel_id: connectedChannelId,
             server_id: participant.server_id,
@@ -633,6 +685,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
     const run = async () => {
       for (const signal of signals) {
+        voiceLog("received signal", {
+          channelId: connectedChannelId,
+          fromUserId: signal.user_id,
+          targetUserId: signal.target_user_id,
+          signalType: signal.signal_type,
+        });
         if (signal.user_id === currentUserId) {
           continue;
         }
