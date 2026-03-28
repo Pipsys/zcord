@@ -108,6 +108,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const disconnectTimersRef = useRef<Map<string, number>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
+  const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
   const sendGatewayEventRef = useRef<(type: string, data: Record<string, unknown>) => boolean>(() => false);
 
@@ -472,6 +473,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       closeAllPeers();
       setRemoteStreams({});
       pendingInitialOffersChannelRef.current = channelId;
+      connectedServerIdRef.current = serverId;
       setConnectedChannel(channelId);
 
       sendGatewayEvent("VOICE_JOIN", {
@@ -490,6 +492,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       if (!hasSnapshot) {
         voiceWarn("participants snapshot timeout", { channelId });
         pendingInitialOffersChannelRef.current = null;
+        connectedServerIdRef.current = null;
         stopLocalStream();
         closeAllPeers();
         setRemoteStreams({});
@@ -527,6 +530,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     pendingInitialOffersChannelRef.current = null;
+    connectedServerIdRef.current = null;
     stopLocalStream();
     closeAllPeers();
     setRemoteStreams({});
@@ -757,10 +761,50 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   }, [connectedChannelId, consumeSignals, createPeerConnection, currentUserId, flushPendingCandidates, signalsByChannel, sendGatewayEvent, closePeer]);
 
   useEffect(() => {
+    if (!socket || !connectedChannelId) {
+      return;
+    }
+
+    const rejoin = async () => {
+      if (!localStreamRef.current) {
+        return;
+      }
+
+      const channelId = connectedChannelIdRef.current;
+      if (!channelId) {
+        return;
+      }
+
+      const serverId = connectedServerIdRef.current;
+      voiceLog("rejoin voice after websocket open", { channelId, serverId });
+      sendGatewayEventRef.current("VOICE_JOIN", {
+        channel_id: channelId,
+        server_id: serverId,
+      });
+      sendGatewayEventRef.current("VOICE_STATE_UPDATE", {
+        channel_id: channelId,
+        server_id: serverId,
+        muted,
+        deafened,
+      });
+      pendingInitialOffersChannelRef.current = channelId;
+    };
+
+    if (socket.readyState === WebSocket.OPEN) {
+      void rejoin();
+      return;
+    }
+
+    socket.addEventListener("open", rejoin);
+    return () => socket.removeEventListener("open", rejoin);
+  }, [connectedChannelId, deafened, muted, socket]);
+
+  useEffect(() => {
     if (!connectedChannelId) {
       closeAllPeers();
       setRemoteStreams({});
       pendingInitialOffersChannelRef.current = null;
+      connectedServerIdRef.current = null;
     }
   }, [closeAllPeers, connectedChannelId]);
 

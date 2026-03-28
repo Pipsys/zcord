@@ -24,6 +24,7 @@ class ConnectionManager:
         self._voice_subscriptions: dict[str, set[WebSocket]] = defaultdict(set)
         self._voice_members: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
         self._socket_voice_channel: dict[WebSocket, str] = {}
+        self._socket_users: dict[WebSocket, str] = {}
         self._pubsub_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
@@ -64,6 +65,7 @@ class ConnectionManager:
     async def connect(self, user_id: str, websocket: WebSocket) -> None:
         await websocket.accept()
         self._connections[user_id].add(websocket)
+        self._socket_users[websocket] = user_id
         try:
             await redis_client.setex(f"presence:{user_id}", settings.presence_ttl_seconds, "online")
         except RedisError:
@@ -77,6 +79,7 @@ class ConnectionManager:
             group.discard(websocket)
         for group in self._dm_subscriptions.values():
             group.discard(websocket)
+        self._socket_users.pop(websocket, None)
 
         if not self._connections[user_id]:
             self._connections.pop(user_id, None)
@@ -192,6 +195,14 @@ class ConnectionManager:
             return None
         return dict(member)
 
+    def _user_has_other_voice_socket_in_channel(self, user_id: str, channel_id: str) -> bool:
+        for socket, socket_channel_id in self._socket_voice_channel.items():
+            if socket_channel_id != channel_id:
+                continue
+            if self._socket_users.get(socket) == user_id:
+                return True
+        return False
+
     def _leave_voice_membership(self, websocket: WebSocket, user_id: str) -> dict[str, Any] | None:
         channel_id = self._socket_voice_channel.pop(websocket, None)
         if channel_id is None:
@@ -203,6 +214,10 @@ class ConnectionManager:
 
         members = self._voice_members.get(channel_id)
         if not members:
+            return None
+
+        # Keep voice membership while the same user still has another active socket in this channel.
+        if self._user_has_other_voice_socket_in_channel(user_id, channel_id):
             return None
 
         member = members.pop(user_id, None)
