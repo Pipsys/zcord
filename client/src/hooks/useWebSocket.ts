@@ -239,6 +239,7 @@ const getWebSocketCandidates = (): string[] => {
   const isDevMode = Boolean(import.meta.env.DEV);
   const candidates = [
     typeof configured === "string" ? configured.trim() : "",
+    "wss://api.pawcord.ru/ws/gateway",
     ...(isDevMode ? [] : ["wss://pawcord.ru/ws/gateway", "wss://www.pawcord.ru/ws/gateway"]),
     "ws://localhost:8000/ws/gateway",
     "ws://127.0.0.1:8000/ws/gateway",
