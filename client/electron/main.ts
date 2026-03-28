@@ -319,6 +319,10 @@ const createWindow = async (): Promise<void> => {
     );
   });
 
+  mainWindow.webContents.on("did-finish-load", () => {
+    console.info("[renderer] did-finish-load");
+  });
+
   mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
     if (level >= 2) {
       // Surface renderer failures in terminal output for packaged builds.
@@ -329,6 +333,34 @@ const createWindow = async (): Promise<void> => {
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error(`[renderer] process gone: reason=${details.reason} exitCode=${details.exitCode}`);
   });
+
+  // If bundle JS never boots (blank/gray screen), replace with explicit diagnostics.
+  setTimeout(async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    try {
+      const started = await mainWindow.webContents.executeJavaScript(
+        "Boolean(window.__RUCORD_RENDERER_BOOTSTRAP)",
+        true,
+      );
+      if (started) {
+        console.info("[renderer] bootstrap flag detected");
+        return;
+      }
+      await mainWindow.loadURL(
+        "data:text/html;charset=utf-8,<!doctype html><html><body style='margin:0;background:#0f0e14;color:#e8ecf2;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;display:grid;place-items:center;min-height:100vh'><div style='max-width:760px;padding:24px 28px;border:1px solid rgba(255,255,255,0.16);border-radius:14px;background:rgba(18,22,34,.72)'><h2 style='margin:0 0 10px;font-size:20px'>Renderer JS did not start</h2><pre style='margin:0;white-space:pre-wrap;word-break:break-word;opacity:.88'>The app loaded HTML but renderer bootstrap flag was not set. This usually means stale build artifacts or blocked JS execution in packaged app.</pre></div></body></html>",
+      );
+    } catch (error) {
+      const details = (error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error))
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      await mainWindow.loadURL(
+        `data:text/html;charset=utf-8,<!doctype html><html><body style="margin:0;background:#0f0e14;color:#e8ecf2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:grid;place-items:center;min-height:100vh;"><div style="max-width:760px;padding:24px 28px;border:1px solid rgba(255,255,255,0.16);border-radius:14px;background:rgba(18,22,34,.72)"><h2 style="margin:0 0 10px;font-size:20px">Renderer health-check failed</h2><pre style="margin:0;white-space:pre-wrap;word-break:break-word;opacity:.88">${details}</pre></div></body></html>`,
+      );
+    }
+  }, 3500);
 
   setupAutoUpdater();
 };

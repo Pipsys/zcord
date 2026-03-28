@@ -8,6 +8,9 @@ import { queryClient } from "@/api/queryClient";
 import { I18nProvider } from "@/i18n/provider";
 import "@/styles/globals.css";
 
+// Signal for Electron main process that renderer bootstrap JS has started.
+(window as { __RUCORD_RENDERER_BOOTSTRAP?: boolean }).__RUCORD_RENDERER_BOOTSTRAP = true;
+
 const renderFatalScreen = (title: string, details: string) => {
   const root = document.getElementById("root");
   if (!root) {
