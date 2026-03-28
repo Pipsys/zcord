@@ -1,6 +1,6 @@
-# Pawcord
+# Rucord
 
-Pawcord is a full-stack desktop messenger inspired by modern community chat platforms, with secure auth, WebSocket realtime events, encrypted DM support primitives, media uploads, and an Electron + React desktop client.
+Rucord is a full-stack desktop messenger inspired by modern community chat platforms, with secure auth, WebSocket realtime events, encrypted DM support primitives, media uploads, and an Electron + React desktop client.
 
 ## Monorepo Layout
 

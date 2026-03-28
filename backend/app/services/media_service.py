@@ -17,7 +17,7 @@ from app.models.attachment import Attachment
 from app.models.message import Message
 
 settings = get_settings()
-AVATAR_MAX_BYTES = 10 * 1024 * 1024
+AVATAR_MAX_BYTES = 25 * 1024 * 1024
 ALLOWED_AVATAR_MIME_TYPES = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -144,11 +144,11 @@ class MediaService:
 
     async def upload_user_avatar(self, user_id: uuid.UUID, upload_file: UploadFile) -> str:
         if upload_file.size and upload_file.size > AVATAR_MAX_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar exceeds 10MB")
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar exceeds 25MB")
 
         payload = await upload_file.read()
         if len(payload) > AVATAR_MAX_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar exceeds 10MB")
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar exceeds 25MB")
 
         guessed = magic.from_buffer(payload[:2048], mime=True)
         content_type = guessed or upload_file.content_type or ""

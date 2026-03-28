@@ -4,7 +4,7 @@ import { useLocation } from "react-router-dom";
 
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/i18n/provider";
-import pawcordLogo from "../../../animal.png";
+import rucordLogo from "../../../animal.png";
 
 interface WindowControlButtonProps {
   title: string;
@@ -59,8 +59,8 @@ export const TitleBar = () => {
       {isMac ? <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" /> : null}
 
       <div className={clsx("min-w-0 flex items-center", isMac ? "gap-3 pl-[76px]" : "gap-2")}>
-        <img src={pawcordLogo} alt="Pawcord" className="h-4 w-4 rounded object-contain" />
-        <span className={clsx("font-semibold uppercase text-paw-text-muted", isMac ? "text-[11px] tracking-[0.18em]" : "text-xs tracking-[0.08em]")}>Pawcord</span>
+        <img src={rucordLogo} alt="Rucord" className="h-4 w-4 rounded object-contain" />
+        <span className={clsx("font-semibold uppercase text-paw-text-muted", isMac ? "text-[11px] tracking-[0.18em]" : "text-xs tracking-[0.08em]")}>Rucord</span>
         <span className="text-xs text-paw-text-muted">/</span>
         <span className={clsx("truncate font-semibold text-paw-text-secondary", isMac ? "text-[13px]" : "text-sm")}>{sectionTitle}</span>
       </div>

@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useServerStore } from "@/store/serverStore";
-import pawcordLogo from "../../../animal.png";
+import rucordLogo from "../../../animal.png";
 
 const itemBase = "relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl text-sm font-semibold transition";
 
@@ -31,7 +31,7 @@ export const Sidebar = () => {
               color: "var(--color-text-primary)",
             }}
           >
-            <img src={pawcordLogo} alt="Pawcord" className="block h-6 w-6 rounded-lg object-contain" />
+            <img src={rucordLogo} alt="Rucord" className="block h-6 w-6 rounded-lg object-contain" />
             {homeActive ? <span className="absolute -left-[11px] h-8 w-1 rounded-r bg-white" /> : null}
           </motion.div>
         </Link>

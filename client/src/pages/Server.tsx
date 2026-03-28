@@ -621,11 +621,16 @@ const ServerPage = () => {
                 muted={voiceRoom.muted}
                 deafened={voiceRoom.deafened}
                 volume={voiceRoom.volume}
+                inputDevices={voiceRoom.inputDevices}
+                selectedInputDeviceId={voiceRoom.selectedInputDeviceId}
                 onConnect={() => void handleVoiceJoin(activeChannel.id)}
                 onLeave={() => void voiceRoom.leave()}
                 onToggleMute={voiceRoom.toggleMuted}
                 onToggleDeafen={voiceRoom.toggleDeafened}
                 onVolumeChange={voiceRoom.setVolume}
+                onInputDeviceChange={(deviceId) => {
+                  void voiceRoom.setInputDevice(deviceId);
+                }}
               />
             </Suspense>
           ) : null}

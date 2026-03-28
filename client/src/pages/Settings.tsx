@@ -9,7 +9,7 @@ import { useAuthStore } from "@/store/authStore";
 import { useUiStore } from "@/store/uiStore";
 import type { User } from "@/types";
 
-const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
+const AVATAR_MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED_AVATAR_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif"]);
 
 const SettingsPage = () => {

@@ -3,6 +3,11 @@
 import { useAuthStore } from "@/store/authStore";
 import { type VoiceParticipant, useVoiceStore } from "@/store/voiceStore";
 
+export interface VoiceInputDevice {
+  deviceId: string;
+  label: string;
+}
+
 interface UseVoiceRoomResult {
   connectedChannelId: string | null;
   participants: VoiceParticipant[];
@@ -10,11 +15,14 @@ interface UseVoiceRoomResult {
   muted: boolean;
   deafened: boolean;
   volume: number;
+  inputDevices: VoiceInputDevice[];
+  selectedInputDeviceId: string;
   join: (channelId: string, serverId: string | null) => Promise<boolean>;
   leave: () => Promise<void>;
   toggleMuted: () => void;
   toggleDeafened: () => void;
   setVolume: (value: number) => void;
+  setInputDevice: (deviceId: string) => Promise<boolean>;
 }
 
 const buildIceServers = (): RTCIceServer[] => {
@@ -25,16 +33,24 @@ const buildIceServers = (): RTCIceServer[] => {
           .split(",")
           .map((item) => item.trim())
           .filter((item) => item.length > 0)
-      : ["stun:stun.l.google.com:19302"];
+      : ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"];
 
   const servers: RTCIceServer[] = [{ urls: stunUrls }];
 
   const turnUrl = import.meta.env.VITE_WEBRTC_TURN_URL as string | undefined;
   const turnUsername = import.meta.env.VITE_WEBRTC_TURN_USERNAME as string | undefined;
   const turnCredential = import.meta.env.VITE_WEBRTC_TURN_CREDENTIAL as string | undefined;
-  if (typeof turnUrl === "string" && turnUrl.trim().length > 0 && turnUsername && turnCredential) {
+  const turnUrls =
+    typeof turnUrl === "string" && turnUrl.trim().length > 0
+      ? turnUrl
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0)
+      : [];
+
+  if (turnUrls.length > 0 && turnUsername && turnCredential) {
     servers.push({
-      urls: turnUrl,
+      urls: turnUrls,
       username: turnUsername,
       credential: turnCredential,
     });
@@ -44,6 +60,7 @@ const buildIceServers = (): RTCIceServer[] => {
 };
 
 const ICE_SERVERS = buildIceServers();
+const DEFAULT_INPUT_DEVICE_ID = "default";
 
 export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
@@ -58,6 +75,8 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const [muted, setMuted] = useState(false);
   const [deafened, setDeafened] = useState(false);
   const [volume, setVolumeState] = useState(1);
+  const [inputDevices, setInputDevices] = useState<VoiceInputDevice[]>([]);
+  const [selectedInputDeviceId, setSelectedInputDeviceId] = useState(DEFAULT_INPUT_DEVICE_ID);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -136,6 +155,78 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     sendGatewayEventRef.current = sendGatewayEvent;
   }, [sendGatewayEvent]);
 
+  const buildAudioConstraints = useCallback((deviceId?: string): MediaTrackConstraints => {
+    const constraints: MediaTrackConstraints = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
+    if (deviceId && deviceId !== DEFAULT_INPUT_DEVICE_ID) {
+      constraints.deviceId = { exact: deviceId };
+    }
+    return constraints;
+  }, []);
+
+  const requestLocalAudioStream = useCallback(
+    async (preferredDeviceId: string): Promise<MediaStream> => {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          audio: buildAudioConstraints(preferredDeviceId),
+        });
+      } catch (error) {
+        if (preferredDeviceId === DEFAULT_INPUT_DEVICE_ID) {
+          throw error;
+        }
+
+        const fallback = await navigator.mediaDevices.getUserMedia({
+          audio: buildAudioConstraints(DEFAULT_INPUT_DEVICE_ID),
+        });
+        setSelectedInputDeviceId(DEFAULT_INPUT_DEVICE_ID);
+        return fallback;
+      }
+    },
+    [buildAudioConstraints],
+  );
+
+  const refreshInputDevices = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
+      return;
+    }
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter((device) => device.kind === "audioinput");
+      const nextDevices: VoiceInputDevice[] = [
+        { deviceId: DEFAULT_INPUT_DEVICE_ID, label: "Default microphone" },
+        ...audioInputs.map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label && device.label.trim().length > 0 ? device.label : `Microphone ${index + 1}`,
+        })),
+      ];
+
+      setInputDevices(nextDevices);
+      const hasSelected = nextDevices.some((device) => device.deviceId === selectedInputDeviceId);
+      if (!hasSelected) {
+        setSelectedInputDeviceId(DEFAULT_INPUT_DEVICE_ID);
+      }
+    } catch {
+      // Device enumeration may fail before media permissions are granted.
+    }
+  }, [selectedInputDeviceId]);
+
+  const waitForParticipantsSnapshot = useCallback(async (channelId: string): Promise<boolean> => {
+    const startedAt = Date.now();
+    const timeoutMs = 4_000;
+    while (Date.now() - startedAt < timeoutMs) {
+      const snapshot = useVoiceStore.getState().participantsByChannel[channelId];
+      if (Array.isArray(snapshot)) {
+        return true;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+    return false;
+  }, []);
+
   const stopLocalStream = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
@@ -164,6 +255,24 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       closePeer(remoteUserId);
     }
   }, [closePeer]);
+
+  useEffect(() => {
+    void refreshInputDevices();
+
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices || typeof mediaDevices.addEventListener !== "function") {
+      return;
+    }
+
+    const handleDeviceChange = () => {
+      void refreshInputDevices();
+    };
+
+    mediaDevices.addEventListener("devicechange", handleDeviceChange);
+    return () => {
+      mediaDevices.removeEventListener("devicechange", handleDeviceChange);
+    };
+  }, [refreshInputDevices]);
 
   const flushPendingCandidates = useCallback(async (remoteUserId: string, peer: RTCPeerConnection) => {
     const queued = pendingCandidatesRef.current.get(remoteUserId);
@@ -250,17 +359,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       try {
         if (!localStreamRef.current) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
-          });
+          const stream = await requestLocalAudioStream(selectedInputDeviceId);
           stream.getAudioTracks().forEach((track) => {
             track.enabled = !muted;
           });
           localStreamRef.current = stream;
+          await refreshInputDevices();
         }
       } catch {
         return false;
@@ -283,9 +387,35 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         deafened,
       });
 
+      const hasSnapshot = await waitForParticipantsSnapshot(channelId);
+      if (!hasSnapshot) {
+        pendingInitialOffersChannelRef.current = null;
+        stopLocalStream();
+        closeAllPeers();
+        setRemoteStreams({});
+        clearChannel(channelId);
+        setConnectedChannel(null);
+        return false;
+      }
+
       return true;
     },
-    [clearChannel, closeAllPeers, connectedChannelId, deafened, muted, sendGatewayEvent, setConnectedChannel, socket, waitForSocketOpen],
+    [
+      clearChannel,
+      closeAllPeers,
+      connectedChannelId,
+      deafened,
+      muted,
+      refreshInputDevices,
+      requestLocalAudioStream,
+      selectedInputDeviceId,
+      sendGatewayEvent,
+      setConnectedChannel,
+      socket,
+      stopLocalStream,
+      waitForParticipantsSnapshot,
+      waitForSocketOpen,
+    ],
   );
 
   const leave = useCallback(async () => {
@@ -335,12 +465,62 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     setVolumeState(next);
   }, []);
 
+  const setInputDevice = useCallback(
+    async (deviceId: string): Promise<boolean> => {
+      const nextDeviceId = typeof deviceId === "string" && deviceId.trim().length > 0 ? deviceId : DEFAULT_INPUT_DEVICE_ID;
+      setSelectedInputDeviceId(nextDeviceId);
+
+      if (!localStreamRef.current) {
+        await refreshInputDevices();
+        return true;
+      }
+
+      let nextStream: MediaStream;
+      try {
+        nextStream = await requestLocalAudioStream(nextDeviceId);
+      } catch {
+        return false;
+      }
+
+      const nextTrack = nextStream.getAudioTracks()[0];
+      if (!nextTrack) {
+        nextStream.getTracks().forEach((track) => track.stop());
+        return false;
+      }
+
+      nextTrack.enabled = !muted;
+      for (const peer of peersRef.current.values()) {
+        for (const sender of peer.getSenders()) {
+          if (sender.track?.kind !== "audio") {
+            continue;
+          }
+          try {
+            await sender.replaceTrack(nextTrack);
+          } catch {
+            // Keep existing sender track if replacement fails for this connection.
+          }
+        }
+      }
+
+      const previousStream = localStreamRef.current;
+      localStreamRef.current = nextStream;
+      previousStream?.getTracks().forEach((track) => track.stop());
+
+      await refreshInputDevices();
+      return true;
+    },
+    [muted, refreshInputDevices, requestLocalAudioStream],
+  );
+
   useEffect(() => {
     if (!connectedChannelId || !currentUserId) {
       return;
     }
 
     if (pendingInitialOffersChannelRef.current !== connectedChannelId) {
+      return;
+    }
+    if (participants.length === 0) {
       return;
     }
 
@@ -489,10 +669,13 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     muted,
     deafened,
     volume,
+    inputDevices,
+    selectedInputDeviceId,
     join,
     leave,
     toggleMuted,
     toggleDeafened,
     setVolume,
+    setInputDevice,
   };
 };

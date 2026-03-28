@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections import defaultdict
 from typing import Any
+from uuid import uuid4
 
 from fastapi import WebSocket
 from redis.exceptions import RedisError
@@ -16,6 +17,7 @@ settings = get_settings()
 
 class ConnectionManager:
     def __init__(self) -> None:
+        self._node_id = uuid4().hex
         self._connections: dict[str, set[WebSocket]] = defaultdict(set)
         self._server_subscriptions: dict[str, set[WebSocket]] = defaultdict(set)
         self._dm_subscriptions: dict[str, set[WebSocket]] = defaultdict(set)
@@ -42,7 +44,9 @@ class ConnectionManager:
                     data = message.get("data")
                     if not isinstance(channel, str) or not isinstance(data, str):
                         continue
-                    payload = json.loads(data)
+                    payload = self._decode_pubsub_payload(data)
+                    if payload is None:
+                        continue
                     if channel.startswith("server:"):
                         server_id = channel.split(":", 1)[1]
                         await self._fanout(self._server_subscriptions.get(server_id, set()), payload)
@@ -95,21 +99,21 @@ class ConnectionManager:
     async def publish_server(self, server_id: str, payload: dict[str, Any]) -> None:
         await self._fanout(self._server_subscriptions.get(server_id, set()), payload)
         try:
-            await redis_client.publish(f"server:{server_id}", json.dumps(payload))
+            await redis_client.publish(f"server:{server_id}", self._encode_pubsub_payload(payload))
         except RedisError:
             return
 
     async def publish_dm(self, channel_id: str, payload: dict[str, Any]) -> None:
         await self._fanout(self._dm_subscriptions.get(channel_id, set()), payload)
         try:
-            await redis_client.publish(f"dm:{channel_id}", json.dumps(payload))
+            await redis_client.publish(f"dm:{channel_id}", self._encode_pubsub_payload(payload))
         except RedisError:
             return
 
     async def publish_voice(self, channel_id: str, payload: dict[str, Any], *, exclude: set[WebSocket] | None = None) -> None:
         await self._fanout(self._voice_subscriptions.get(channel_id, set()), payload, exclude=exclude)
         try:
-            await redis_client.publish(f"voice:{channel_id}", json.dumps(payload))
+            await redis_client.publish(f"voice:{channel_id}", self._encode_pubsub_payload(payload))
         except RedisError:
             return
 
@@ -230,6 +234,33 @@ class ConnectionManager:
                 dead.append(socket)
         for socket in dead:
             sockets.discard(socket)
+
+    def _encode_pubsub_payload(self, payload: dict[str, Any]) -> str:
+        return json.dumps(
+            {
+                "_node_id": self._node_id,
+                "payload": payload,
+            }
+        )
+
+    def _decode_pubsub_payload(self, data: str) -> dict[str, Any] | None:
+        try:
+            decoded = json.loads(data)
+        except json.JSONDecodeError:
+            return None
+
+        if not isinstance(decoded, dict):
+            return None
+
+        if "payload" in decoded:
+            source_node_id = decoded.get("_node_id")
+            if isinstance(source_node_id, str) and source_node_id == self._node_id:
+                return None
+
+            payload = decoded.get("payload")
+            return payload if isinstance(payload, dict) else None
+
+        return decoded
 
 
 manager = ConnectionManager()

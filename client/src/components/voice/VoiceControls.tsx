@@ -1,16 +1,31 @@
-﻿import { useI18n } from "@/i18n/provider";
+import { useI18n } from "@/i18n/provider";
+import type { VoiceInputDevice } from "@/hooks/useVoiceRoom";
 
 interface VoiceControlsProps {
   muted: boolean;
   deafened: boolean;
   connected: boolean;
+  inputDevices: VoiceInputDevice[];
+  selectedInputDeviceId: string;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onLeave: () => void;
   onVolumeChange: (value: number) => void;
+  onInputDeviceChange: (deviceId: string) => void;
 }
 
-export const VoiceControls = ({ muted, deafened, connected, onToggleMute, onToggleDeafen, onLeave, onVolumeChange }: VoiceControlsProps) => {
+export const VoiceControls = ({
+  muted,
+  deafened,
+  connected,
+  inputDevices,
+  selectedInputDeviceId,
+  onToggleMute,
+  onToggleDeafen,
+  onLeave,
+  onVolumeChange,
+  onInputDeviceChange,
+}: VoiceControlsProps) => {
   const { t } = useI18n();
 
   return (
@@ -51,6 +66,21 @@ export const VoiceControls = ({ muted, deafened, connected, onToggleMute, onTogg
       <label className="ml-auto flex items-center gap-2 text-xs text-paw-text-muted">
         {t("voice.volume")}
         <input type="range" min={0} max={100} defaultValue={100} onChange={(event) => onVolumeChange(Number(event.target.value) / 100)} className="accent-paw-accent" />
+      </label>
+
+      <label className="flex items-center gap-2 text-xs text-paw-text-muted">
+        {t("voice.input_device")}
+        <select
+          value={selectedInputDeviceId}
+          onChange={(event) => onInputDeviceChange(event.target.value)}
+          className="rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs text-paw-text-secondary focus:border-paw-accent focus:outline-none"
+        >
+          {inputDevices.map((device: VoiceInputDevice) => (
+            <option key={device.deviceId} value={device.deviceId}>
+              {device.deviceId === "default" ? t("voice.input_default") : device.label}
+            </option>
+          ))}
+        </select>
       </label>
     </div>
   );

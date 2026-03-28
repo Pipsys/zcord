@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    app_name: str = "Pawcord API"
+    app_name: str = "Rucord API"
     env: str = "development"
     debug: bool = False
     api_prefix: str = "/api/v1"

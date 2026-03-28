@@ -2,6 +2,7 @@
 
 import { Avatar } from "@/components/ui/Avatar";
 import { VoiceControls } from "@/components/voice/VoiceControls";
+import type { VoiceInputDevice } from "@/hooks/useVoiceRoom";
 import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
 import type { VoiceParticipant } from "@/store/voiceStore";
@@ -15,11 +16,14 @@ interface VoiceChannelProps {
   muted: boolean;
   deafened: boolean;
   volume: number;
+  inputDevices: VoiceInputDevice[];
+  selectedInputDeviceId: string;
   onConnect: () => void;
   onLeave: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onVolumeChange: (value: number) => void;
+  onInputDeviceChange: (deviceId: string) => void;
 }
 
 const toParticipantName = (participant: VoiceParticipant, currentUserId: string | null, currentUsername: string | null): string => {
@@ -41,11 +45,14 @@ export const VoiceChannel = ({
   muted,
   deafened,
   volume,
+  inputDevices,
+  selectedInputDeviceId,
   onConnect,
   onLeave,
   onToggleMute,
   onToggleDeafen,
   onVolumeChange,
+  onInputDeviceChange,
 }: VoiceChannelProps) => {
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
@@ -91,6 +98,9 @@ export const VoiceChannel = ({
       }
       audio.muted = deafened;
       audio.volume = volume;
+      void audio.play().catch(() => {
+        // Browser/electron autoplay guard. User can still unmute/reconnect manually.
+      });
     }
   }, [deafened, remoteStreams, user?.id, visibleParticipants, volume]);
 
@@ -173,10 +183,13 @@ export const VoiceChannel = ({
         muted={muted}
         deafened={deafened}
         connected={connected}
+        inputDevices={inputDevices}
+        selectedInputDeviceId={selectedInputDeviceId}
         onToggleMute={onToggleMute}
         onToggleDeafen={onToggleDeafen}
         onLeave={onLeave}
         onVolumeChange={onVolumeChange}
+        onInputDeviceChange={onInputDeviceChange}
       />
     </section>
   );
