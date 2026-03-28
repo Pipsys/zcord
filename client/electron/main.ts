@@ -313,6 +313,17 @@ const createWindow = async (): Promise<void> => {
     );
   });
 
+  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level >= 2) {
+      // Surface renderer failures in terminal output for packaged builds.
+      console.error(`[renderer:${level}] ${sourceId}:${line} ${message}`);
+    }
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`[renderer] process gone: reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+
   setupAutoUpdater();
 };
 
