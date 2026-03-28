@@ -382,9 +382,13 @@ const createWindow = async (): Promise<void> => {
   });
 
   mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-    if (level >= 2) {
-      // Surface renderer failures in terminal output for packaged builds.
-      console.error(`[renderer:${level}] ${sourceId}:${line} ${message}`);
+    if (level >= 1) {
+      // Surface renderer voice/network diagnostics in terminal output too.
+      if (level >= 2) {
+        console.error(`[renderer:${level}] ${sourceId}:${line} ${message}`);
+        return;
+      }
+      console.log(`[renderer:${level}] ${sourceId}:${line} ${message}`);
     }
   });
 
