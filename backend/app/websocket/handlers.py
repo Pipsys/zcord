@@ -2,6 +2,7 @@
 
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from app.websocket.events import ClientEventType, GatewayEventType
 from app.websocket.manager import manager
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class EventRateLimiter:
@@ -282,10 +284,12 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
     if event_type == ClientEventType.VOICE_JOIN.value:
         channel_id = data.get("channel_id")
         if not isinstance(channel_id, str):
+            logger.info("voice.join rejected: missing channel_id user_id=%s", user_id)
             return
 
         channel = await _validate_voice_channel_access(channel_id, user_id)
         if channel is None:
+            logger.info("voice.join rejected: access denied user_id=%s channel_id=%s", user_id, channel_id)
             await websocket.send_json(
                 {
                     "op": "ERROR",
@@ -304,6 +308,14 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
             username=username,
             avatar_url=avatar_url,
             websocket=websocket,
+        )
+        logger.info(
+            "voice.join ok user_id=%s channel_id=%s server_id=%s participants=%d joined_new=%s",
+            user_id,
+            channel_id,
+            server_id,
+            len(participants),
+            joined_member is not None,
         )
 
         if left_member is not None:
@@ -343,8 +355,15 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
     if event_type == ClientEventType.VOICE_LEAVE.value:
         left_member = await manager.leave_voice(user_id=user_id, websocket=websocket)
         if left_member is None:
+            logger.info("voice.leave ignored: no active membership user_id=%s", user_id)
             return
 
+        logger.info(
+            "voice.leave ok user_id=%s channel_id=%s server_id=%s",
+            user_id,
+            left_member["channel_id"],
+            left_member.get("server_id"),
+        )
         await manager.publish_voice(
             left_member["channel_id"],
             {
@@ -370,19 +389,35 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
     if event_type == ClientEventType.VOICE_SIGNAL.value:
         member = manager.get_joined_voice_member(websocket, user_id)
         if member is None:
+            logger.info("voice.signal ignored: sender not joined user_id=%s", user_id)
             return
 
         channel_id = data.get("channel_id")
         signal_type = data.get("signal_type")
         signal_payload = data.get("payload")
         if not isinstance(channel_id, str) or channel_id != member.get("channel_id"):
+            logger.info(
+                "voice.signal ignored: invalid channel sender=%s provided_channel=%s joined_channel=%s",
+                user_id,
+                channel_id,
+                member.get("channel_id"),
+            )
             return
         if signal_type not in {"offer", "answer", "ice-candidate"}:
+            logger.info("voice.signal ignored: invalid type sender=%s type=%s", user_id, signal_type)
             return
         if not isinstance(signal_payload, dict):
+            logger.info("voice.signal ignored: payload is not object sender=%s type=%s", user_id, signal_type)
             return
 
         target_user_id = data.get("target_user_id")
+        logger.info(
+            "voice.signal relay sender=%s target=%s channel_id=%s type=%s",
+            user_id,
+            target_user_id if isinstance(target_user_id, str) else "broadcast",
+            channel_id,
+            signal_type,
+        )
         await manager.publish_voice(
             channel_id,
             {
