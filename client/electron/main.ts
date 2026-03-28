@@ -12,6 +12,12 @@ const ALLOWED_MEDIA_PERMISSIONS = new Set(["media", "audioCapture", "videoCaptur
 
 let mainWindow: BrowserWindow | null = null;
 
+// macOS on some integrated GPUs can render an empty/gray window in packaged Electron apps.
+// Prefer reliability over GPU acceleration for desktop messenger UI.
+if (process.platform === "darwin") {
+  app.disableHardwareAcceleration();
+}
+
 const BACKEND_CERT_FINGERPRINT = process.env.BACKEND_CERT_FINGERPRINT ?? "";
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const PROD_DEFAULT_DOMAIN = "pawcord.ru";
@@ -286,8 +292,26 @@ const createWindow = async (): Promise<void> => {
   if (process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    await mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    try {
+      await mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const escaped = message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      await mainWindow.loadURL(
+        `data:text/html;charset=utf-8,<!doctype html><html><body style="margin:0;background:#0f0e14;color:#e8ecf2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:grid;place-items:center;min-height:100vh;"><div style="max-width:760px;padding:24px 28px;border:1px solid rgba(255,255,255,0.16);border-radius:14px;background:rgba(18,22,34,.72)"><h2 style="margin:0 0 10px;font-size:20px">Renderer failed to load</h2><pre style="margin:0;white-space:pre-wrap;word-break:break-word;opacity:.88">${escaped}</pre></div></body></html>`,
+      );
+    }
   }
+
+  mainWindow.webContents.on("did-fail-load", async (_event, errorCode, errorDescription, validatedURL) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    const details = `${errorCode} ${errorDescription} ${validatedURL}`.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    await mainWindow.loadURL(
+      `data:text/html;charset=utf-8,<!doctype html><html><body style="margin:0;background:#0f0e14;color:#e8ecf2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:grid;place-items:center;min-height:100vh;"><div style="max-width:760px;padding:24px 28px;border:1px solid rgba(255,255,255,0.16);border-radius:14px;background:rgba(18,22,34,.72)"><h2 style="margin:0 0 10px;font-size:20px">Renderer did-fail-load</h2><pre style="margin:0;white-space:pre-wrap;word-break:break-word;opacity:.88">${details}</pre></div></body></html>`,
+    );
+  });
 
   setupAutoUpdater();
 };
