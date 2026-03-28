@@ -1,6 +1,19 @@
-﻿import { autoUpdater } from "electron-updater";
+import { app } from "electron";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { autoUpdater } from "electron-updater";
 
 export const setupAutoUpdater = (): void => {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  const updateConfigPath = path.join(process.resourcesPath, "app-update.yml");
+  if (!existsSync(updateConfigPath)) {
+    console.info(`[updater] skip: ${updateConfigPath} not found`);
+    return;
+  }
+
   autoUpdater.autoDownload = false;
 
   autoUpdater.on("update-available", async () => {
@@ -11,5 +24,11 @@ export const setupAutoUpdater = (): void => {
     autoUpdater.quitAndInstall(false, true);
   });
 
-  void autoUpdater.checkForUpdatesAndNotify();
+  autoUpdater.on("error", (error) => {
+    console.warn("[updater] error:", error);
+  });
+
+  void autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+    console.warn("[updater] check failed:", error);
+  });
 };
