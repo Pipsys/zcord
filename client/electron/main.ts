@@ -111,10 +111,12 @@ const buildContentSecurityPolicy = (): string => {
 
   const publicOrigins = getPublicOrigins();
   const wsOrigins = publicOrigins.map((origin) => toWebSocketOrigin(origin));
-  const mediaSources = ["'self'", "data:", "blob:", ...publicOrigins];
-  const connectSources = ["'self'", ...publicOrigins, ...wsOrigins];
+  const mediaSources = ["'self'", "data:", "blob:", "file:", ...publicOrigins];
+  const connectSources = ["'self'", "https:", "wss:", "http:", "ws:", "file:", "blob:", ...publicOrigins, ...wsOrigins];
 
-  return `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src ${mediaSources.join(" ")}; media-src ${mediaSources.join(" ")}; connect-src ${connectSources.join(" ")}; font-src 'self' data:;`;
+  // Packaged Electron renderer runs via file:// and may use blob/module internals.
+  // Keep CSP permissive enough to prevent false-positive blank screens.
+  return `default-src 'self' file: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' file: blob:; style-src 'self' 'unsafe-inline' file: https://fonts.googleapis.com; img-src ${mediaSources.join(" ")} https:; media-src ${mediaSources.join(" ")} https:; connect-src ${connectSources.join(" ")}; font-src 'self' data: file: https://fonts.gstatic.com;`;
 };
 
 const readAccessTokenFromPayload = (data: unknown): string | null => {
@@ -260,6 +262,10 @@ const createWindow = async (): Promise<void> => {
   });
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (details.url.startsWith("file://")) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
     const csp = buildContentSecurityPolicy();
 
     callback({
