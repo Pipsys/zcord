@@ -3,7 +3,7 @@
 interface AvatarProps {
   src?: string | null;
   label: string;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   online?: boolean;
 }
 
@@ -11,6 +11,7 @@ const sizeClasses = {
   sm: "h-7 w-7 text-xs",
   md: "h-10 w-10 text-sm",
   lg: "h-14 w-14 text-base",
+  xl: "h-24 w-24 text-xl",
 };
 
 export const Avatar = ({ src, label, size = "md", online = false }: AvatarProps) => (

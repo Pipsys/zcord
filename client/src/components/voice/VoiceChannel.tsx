@@ -3,6 +3,7 @@ import { clsx } from "clsx";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { VoiceControls } from "@/components/voice/VoiceControls";
+import { VoiceAvatarStateBadge, VoiceStateIndicators } from "@/components/voice/VoiceStateIndicators";
 import type { ScreenShareSource, VoiceInputDevice } from "@/hooks/useVoiceRoom";
 import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
@@ -155,18 +156,22 @@ export const VoiceChannel = ({
       const screenStream = resolveScreenStream(participant.user_id);
       const isSharingScreen = Boolean(participant.screen_sharing || (isCurrentUser && screenSharing) || screenStream);
       const avatarSource = isCurrentUser ? participant.avatar_url ?? user?.avatar_url ?? null : participant.avatar_url ?? null;
+      const isMuted = isCurrentUser ? muted : participant.muted;
+      const isDeafened = isCurrentUser ? deafened : participant.deafened;
 
       return {
         participant,
         name,
         isCurrentUser,
         isSpeaking,
+        isMuted,
+        isDeafened,
         screenStream,
         isSharingScreen,
         avatarSource,
       };
     });
-  }, [resolveScreenStream, screenSharing, speakingSet, user?.avatar_url, user?.id, user?.username, visibleParticipants]);
+  }, [deafened, muted, resolveScreenStream, screenSharing, speakingSet, user?.avatar_url, user?.id, user?.username, visibleParticipants]);
 
   const resolveGridClass = (count: number): string => {
     if (count <= 1) {
@@ -418,7 +423,7 @@ export const VoiceChannel = ({
                 screenShareTiles.length === 1 ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2",
               )}
             >
-              {screenShareTiles.map(({ participant, name, isCurrentUser, isSpeaking, isSharingScreen, avatarSource }) => (
+              {screenShareTiles.map(({ participant, name, isCurrentUser, isSpeaking, isSharingScreen, isMuted, isDeafened }) => (
                 <article
                   key={participant.user_id}
                   className={clsx(
@@ -438,7 +443,10 @@ export const VoiceChannel = ({
 
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
 
-                  <div className="absolute bottom-2 left-2 rounded-md bg-black/55 px-2 py-1 text-xs font-semibold text-white">{name}</div>
+                  <div className="absolute bottom-2 left-2 flex max-w-[75%] items-center gap-1.5 rounded-md bg-black/55 px-2.5 py-1.5 text-sm font-semibold text-white">
+                    <span className="truncate">{name}</span>
+                    <VoiceStateIndicators className="shrink-0" muted={isMuted} deafened={isDeafened} />
+                  </div>
 
                   {isSharingScreen ? (
                     <div className="absolute right-2 top-2 rounded-full border border-red-400/40 bg-red-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
@@ -458,7 +466,7 @@ export const VoiceChannel = ({
 
             {regularVoiceTiles.length > 0 ? (
               <div className={clsx("grid auto-rows-fr gap-3", regularGridClass)}>
-                {regularVoiceTiles.map(({ participant, name, isSpeaking, avatarSource }) => (
+                {regularVoiceTiles.map(({ participant, name, isSpeaking, isMuted, isDeafened, avatarSource }) => (
                   <article
                     key={participant.user_id}
                     className={clsx(
@@ -467,11 +475,24 @@ export const VoiceChannel = ({
                     )}
                   >
                     <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
-                      <div className={clsx("rounded-full p-1.5", isSpeaking ? "ring-2 ring-[#43b581]" : "ring-1 ring-white/15")}>
-                        <Avatar src={avatarSource} label={name} online={!participant.deafened} size="lg" />
+                      <div
+                        className={clsx(
+                          "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
+                          isSpeaking
+                            ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.28)]"
+                            : "border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.28)]",
+                        )}
+                      >
+                        <span className="relative inline-flex">
+                          <Avatar src={avatarSource} label={name} online={!isMuted && !isDeafened} size="xl" />
+                          <VoiceAvatarStateBadge size="xl" muted={isMuted} deafened={isDeafened} />
+                        </span>
                       </div>
                     </div>
-                    <div className="absolute bottom-2 left-2 rounded-md bg-black/55 px-2 py-1 text-xs font-semibold text-white">{name}</div>
+                    <div className="absolute bottom-2 left-2 flex max-w-[75%] items-center gap-1.5 rounded-md bg-black/55 px-2.5 py-1.5 text-sm font-semibold text-white">
+                      <span className="truncate">{name}</span>
+                      <VoiceStateIndicators className="shrink-0" muted={isMuted} deafened={isDeafened} />
+                    </div>
                   </article>
                 ))}
               </div>
@@ -479,7 +500,7 @@ export const VoiceChannel = ({
           </div>
         ) : (
           <div className={clsx("grid h-full min-h-0 auto-rows-fr gap-3", tileGridClass)}>
-            {participantTiles.map(({ participant, name, isCurrentUser, isSpeaking, isSharingScreen, avatarSource, screenStream }) => (
+            {participantTiles.map(({ participant, name, isCurrentUser, isSpeaking, isMuted, isDeafened, isSharingScreen, avatarSource, screenStream }) => (
               <article
                 key={participant.user_id}
                 className={clsx(
@@ -499,15 +520,28 @@ export const VoiceChannel = ({
                   />
                 ) : (
                   <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
-                    <div className={clsx("rounded-full p-1.5", isSpeaking ? "ring-2 ring-[#43b581]" : "ring-1 ring-white/15")}>
-                      <Avatar src={avatarSource} label={name} online={!participant.deafened} size="lg" />
+                    <div
+                      className={clsx(
+                        "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
+                        isSpeaking
+                          ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.28)]"
+                          : "border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.28)]",
+                      )}
+                    >
+                      <span className="relative inline-flex">
+                        <Avatar src={avatarSource} label={name} online={!isMuted && !isDeafened} size="xl" />
+                        <VoiceAvatarStateBadge size="xl" muted={isMuted} deafened={isDeafened} />
+                      </span>
                     </div>
                   </div>
                 )}
 
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
 
-                <div className="absolute bottom-2 left-2 rounded-md bg-black/55 px-2 py-1 text-xs font-semibold text-white">{name}</div>
+                <div className="absolute bottom-2 left-2 flex max-w-[75%] items-center gap-1.5 rounded-md bg-black/55 px-2.5 py-1.5 text-sm font-semibold text-white">
+                  <span className="truncate">{name}</span>
+                  <VoiceStateIndicators className="shrink-0" muted={isMuted} deafened={isDeafened} />
+                </div>
 
                 {isSharingScreen ? (
                   <div className="absolute right-2 top-2 rounded-full border border-red-400/40 bg-red-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">

@@ -1,7 +1,10 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Link } from "react-router-dom";
 
 import { useMeQuery } from "@/api/queries";
 import { Avatar } from "@/components/ui/Avatar";
+import { VoiceAvatarStateBadge, VoiceStateIndicators } from "@/components/voice/VoiceStateIndicators";
+import { Button } from "@/components/ui/Button";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { GatewayConnectionStatus } from "@/hooks/useWebSocket";
 import { useI18n } from "@/i18n/provider";
@@ -56,6 +59,25 @@ const channelRowBaseClass =
   "group flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[15px] leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
 const iconActionButtonClass =
   "grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition-colors hover:bg-white/10 hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-50";
+const CHANNEL_LIST_MIN_WIDTH = 220;
+const CHANNEL_LIST_MAX_WIDTH = 360;
+const CHANNEL_LIST_DEFAULT_WIDTH = 240;
+const CHANNEL_LIST_WIDTH_STORAGE_KEY = "zcord.channel-list-width";
+
+const clampChannelListWidth = (value: number): number =>
+  Math.min(CHANNEL_LIST_MAX_WIDTH, Math.max(CHANNEL_LIST_MIN_WIDTH, value));
+
+const readStoredChannelListWidth = (): number => {
+  if (typeof window === "undefined") {
+    return CHANNEL_LIST_DEFAULT_WIDTH;
+  }
+  const raw = window.localStorage.getItem(CHANNEL_LIST_WIDTH_STORAGE_KEY);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return CHANNEL_LIST_DEFAULT_WIDTH;
+  }
+  return clampChannelListWidth(parsed);
+};
 
 export const ChannelList = ({
   connectedVoiceChannelId,
@@ -79,6 +101,12 @@ export const ChannelList = ({
   const servers = useServerStore((state) => state.servers);
   const activeServerId = useServerStore((state) => state.activeServerId);
   const participantsByChannel = useVoiceStore((state) => state.participantsByChannel);
+  const [panelWidth, setPanelWidth] = useState<number>(() => readStoredChannelListWidth());
+  const resizeStateRef = useRef<{ active: boolean; startX: number; startWidth: number }>({
+    active: false,
+    startX: 0,
+    startWidth: CHANNEL_LIST_DEFAULT_WIDTH,
+  });
 
   const [context, setContext] = useState<{ visible: boolean; x: number; y: number; channelId: string | null }>({
     visible: false,
@@ -132,6 +160,53 @@ export const ChannelList = ({
     }
     return channels.find((item) => item.id === connectedVoiceChannelId) ?? null;
   }, [channels, connectedVoiceChannelId]);
+
+  const handleResizeMove = useCallback((event: PointerEvent) => {
+    const state = resizeStateRef.current;
+    if (!state.active) {
+      return;
+    }
+    const deltaX = event.clientX - state.startX;
+    setPanelWidth(clampChannelListWidth(state.startWidth + deltaX));
+  }, []);
+
+  const stopResize = useCallback(() => {
+    if (!resizeStateRef.current.active) {
+      return;
+    }
+    resizeStateRef.current.active = false;
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    window.removeEventListener("pointermove", handleResizeMove);
+    window.removeEventListener("pointerup", stopResize);
+  }, [handleResizeMove]);
+
+  const startResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      resizeStateRef.current.active = true;
+      resizeStateRef.current.startX = event.clientX;
+      resizeStateRef.current.startWidth = panelWidth;
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      window.addEventListener("pointermove", handleResizeMove);
+      window.addEventListener("pointerup", stopResize);
+    },
+    [handleResizeMove, panelWidth, stopResize],
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(CHANNEL_LIST_WIDTH_STORAGE_KEY, String(Math.round(panelWidth)));
+  }, [panelWidth]);
+
+  useEffect(() => {
+    return () => {
+      stopResize();
+    };
+  }, [stopResize]);
 
   const actions = useMemo(
     () => [
@@ -197,12 +272,18 @@ export const ChannelList = ({
               return (
                 <div
                   key={`${channel.id}-${participant.user_id}`}
-                  className="flex h-7 items-center gap-2 rounded-md px-1.5 text-[12px] leading-4 text-paw-text-secondary transition-colors hover:bg-white/10"
+                  className="flex h-9 items-center gap-2.5 rounded-md px-1.5 text-[14px] leading-5 text-paw-text-secondary transition-colors hover:bg-white/10"
                 >
-                  <Avatar src={participant.avatar_url ?? null} label={name} size="sm" online={!participant.deafened} />
-                  <span className="min-w-0 flex-1 truncate">
-                    {name}
-                    {isSelf ? ` (${t("voice.you")})` : ""}
+                  <span className="relative inline-flex">
+                    <Avatar src={participant.avatar_url ?? null} label={name} size="md" online={!participant.muted && !participant.deafened} />
+                    <VoiceAvatarStateBadge size="md" muted={participant.muted} deafened={participant.deafened} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="truncate">
+                      {name}
+                      {isSelf ? ` (${t("voice.you")})` : ""}
+                    </span>
+                    <VoiceStateIndicators className="shrink-0" muted={participant.muted} deafened={participant.deafened} />
                   </span>
                   {participant.screen_sharing ? (
                     <span className="rounded bg-[#da373c] px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-3 tracking-wide text-white">
@@ -219,15 +300,28 @@ export const ChannelList = ({
   };
 
   return (
-    <section className="flex h-full w-60 flex-col border-r border-black/35 bg-paw-bg-secondary">
-      <header className="h-12 border-b border-black/35 px-3 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
-        <div className="flex h-full items-center">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <h2 className="truncate text-[15px] font-semibold text-paw-text-primary">{server?.name ?? "Server"}</h2>
+    <section className="relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary" style={{ width: `${panelWidth}px` }}>
+      <header className="relative h-28 overflow-hidden border-b border-black/35 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
+        <div className="absolute inset-0">
+          {server?.banner_url ? (
+            <img src={server.banner_url} alt={server?.name ?? "Server"} className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full bg-[radial-gradient(110%_90%_at_10%_10%,rgba(95,120,255,0.35),transparent_55%),radial-gradient(80%_80%_at_100%_0%,rgba(80,220,170,0.24),transparent_60%),linear-gradient(180deg,#1b2234_0%,#131722_100%)]" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/50 to-[#11131a]/95" />
+        </div>
+
+        <div className="relative flex h-full flex-col justify-end gap-2 px-3 pb-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Avatar src={server?.icon_url ?? null} label={server?.name ?? "Server"} size="sm" />
+            <h2 className="truncate text-[15px] font-semibold text-white">{server?.name ?? "Server"}</h2>
+          </div>
+
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={onInvite}
-              className="rounded-md border border-white/10 bg-[#1f2125] px-2 py-1 text-[11px] font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+              className="h-7 rounded-md border border-white/15 bg-black/35 px-2.5 text-[11px] font-semibold leading-4 text-paw-text-secondary backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             >
               {t("server.invite_button")}
             </button>
@@ -237,7 +331,7 @@ export const ChannelList = ({
                 title={t("server.settings_button")}
                 aria-label={t("server.settings_button")}
                 onClick={onOpenServerSettings}
-                className="grid h-7 w-7 place-items-center rounded-md border border-white/10 bg-[#1f2125] text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+                className="grid h-7 w-7 place-items-center rounded-md border border-white/15 bg-black/35 text-paw-text-secondary backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
                   <path
@@ -355,16 +449,33 @@ export const ChannelList = ({
           </div>
         ) : null}
 
-        <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#1e1f22] px-2 py-2">
-          <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-paw-text-secondary">{effectiveUser?.username ?? "guest"}</p>
-            <p className="truncate text-xs text-paw-text-muted">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
+        <div className="rounded-lg border border-white/10 bg-[#1e1f22] p-2">
+          <div className="flex items-center gap-2">
+            <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-paw-text-secondary">{effectiveUser?.username ?? "guest"}</p>
+              <p className="truncate text-xs text-paw-text-muted">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
+            </div>
+          </div>
+
+          <div className="mt-2">
+            <Link to="/app/settings" className="block w-full">
+              <Button className="w-full bg-[#2b2d31] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary shadow-none hover:bg-[#35373c]">
+                {t("home.settings")}
+              </Button>
+            </Link>
           </div>
         </div>
       </footer>
 
       <ContextMenu visible={context.visible} x={context.x} y={context.y} actions={actions} />
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize channels panel"
+        onPointerDown={startResize}
+        className="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-white/10"
+      />
     </section>
   );
 };
