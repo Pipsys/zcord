@@ -12,8 +12,10 @@ interface UseVoiceRoomResult {
   connectedChannelId: string | null;
   participants: VoiceParticipant[];
   remoteStreams: Record<string, MediaStream>;
+  remoteScreenStreams: Record<string, MediaStream>;
   muted: boolean;
   deafened: boolean;
+  screenSharing: boolean;
   volume: number;
   inputDevices: VoiceInputDevice[];
   selectedInputDeviceId: string;
@@ -21,6 +23,7 @@ interface UseVoiceRoomResult {
   leave: () => Promise<void>;
   toggleMuted: () => void;
   toggleDeafened: () => void;
+  toggleScreenShare: () => Promise<boolean>;
   setVolume: (value: number) => void;
   setInputDevice: (deviceId: string) => Promise<boolean>;
 }
@@ -97,14 +100,20 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const clearChannel = useVoiceStore((state) => state.clearChannel);
 
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const [remoteScreenStreams, setRemoteScreenStreams] = useState<Record<string, MediaStream>>({});
   const [muted, setMuted] = useState(false);
   const [deafened, setDeafened] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
   const [volume, setVolumeState] = useState(1);
   const [inputDevices, setInputDevices] = useState<VoiceInputDevice[]>([]);
   const [selectedInputDeviceId, setSelectedInputDeviceId] = useState(DEFAULT_INPUT_DEVICE_ID);
 
   const localStreamRef = useRef<MediaStream | null>(null);
+  const localScreenStreamRef = useRef<MediaStream | null>(null);
+  const localScreenTrackRef = useRef<MediaStreamTrack | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const peerMetaRef = useRef<Map<string, { channelId: string; serverId: string | null }>>(new Map());
+  const screenSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
   const disconnectTimersRef = useRef<Map<string, number>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
@@ -282,6 +291,29 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     localStreamRef.current = null;
   }, []);
 
+  const clearLocalScreenState = useCallback((stopTracks: boolean) => {
+    const currentTrack = localScreenTrackRef.current;
+    if (currentTrack) {
+      currentTrack.onended = null;
+      if (stopTracks) {
+        currentTrack.stop();
+      }
+    }
+
+    const currentStream = localScreenStreamRef.current;
+    if (currentStream && stopTracks) {
+      currentStream.getTracks().forEach((track) => {
+        if (track !== currentTrack) {
+          track.stop();
+        }
+      });
+    }
+
+    localScreenTrackRef.current = null;
+    localScreenStreamRef.current = null;
+    setScreenSharing(false);
+  }, []);
+
   const closePeer = useCallback((remoteUserId: string) => {
     const disconnectTimer = disconnectTimersRef.current.get(remoteUserId);
     if (disconnectTimer) {
@@ -297,8 +329,15 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       peer.close();
       peersRef.current.delete(remoteUserId);
     }
+    peerMetaRef.current.delete(remoteUserId);
+    screenSendersRef.current.delete(remoteUserId);
     pendingCandidatesRef.current.delete(remoteUserId);
     setRemoteStreams((current) => {
+      const next = { ...current };
+      delete next[remoteUserId];
+      return next;
+    });
+    setRemoteScreenStreams((current) => {
       const next = { ...current };
       delete next[remoteUserId];
       return next;
@@ -316,6 +355,68 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       closePeer(remoteUserId);
     }
   }, [closePeer]);
+
+  const renegotiatePeer = useCallback(
+    async (remoteUserId: string): Promise<void> => {
+      const peer = peersRef.current.get(remoteUserId);
+      const meta = peerMetaRef.current.get(remoteUserId);
+      if (!peer || !meta) {
+        return;
+      }
+      if (peer.signalingState !== "stable") {
+        voiceWarn("skip renegotiation: signaling state is not stable", {
+          remoteUserId,
+          state: peer.signalingState,
+        });
+        return;
+      }
+
+      try {
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        sendGatewayEvent("VOICE_SIGNAL", {
+          channel_id: meta.channelId,
+          server_id: meta.serverId,
+          target_user_id: remoteUserId,
+          signal_type: "offer",
+          payload: offer,
+        });
+      } catch {
+        closePeer(remoteUserId);
+      }
+    },
+    [closePeer, sendGatewayEvent],
+  );
+
+  const stopScreenShare = useCallback(async (): Promise<boolean> => {
+    const hasScreenTrack = Boolean(localScreenTrackRef.current);
+    if (!hasScreenTrack && screenSendersRef.current.size === 0) {
+      clearLocalScreenState(true);
+      return false;
+    }
+
+    const renegotiateTargets: string[] = [];
+    for (const [remoteUserId, peer] of peersRef.current.entries()) {
+      const sender = screenSendersRef.current.get(remoteUserId);
+      if (!sender) {
+        continue;
+      }
+      try {
+        peer.removeTrack(sender);
+      } catch {
+        // Ignore if sender is already detached.
+      }
+      screenSendersRef.current.delete(remoteUserId);
+      renegotiateTargets.push(remoteUserId);
+    }
+
+    clearLocalScreenState(true);
+
+    for (const remoteUserId of renegotiateTargets) {
+      await renegotiatePeer(remoteUserId);
+    }
+    return true;
+  }, [clearLocalScreenState, renegotiatePeer]);
 
   useEffect(() => {
     void refreshInputDevices();
@@ -365,11 +466,19 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         iceServers: ICE_SERVERS,
       });
       const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      peerMetaRef.current.set(remoteUserId, { channelId, serverId });
+
       const localStream = localStreamRef.current;
       if (localStream) {
         for (const track of localStream.getTracks()) {
           peer.addTrack(track, localStream);
         }
+      }
+      const screenTrack = localScreenTrackRef.current;
+      const screenStream = localScreenStreamRef.current;
+      if (screenTrack && screenStream) {
+        const sender = peer.addTrack(screenTrack, screenStream);
+        screenSendersRef.current.set(remoteUserId, sender);
       }
 
       peer.onicecandidate = (event) => {
@@ -388,6 +497,22 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       peer.ontrack = (event) => {
         const [stream] = event.streams;
         if (!stream) {
+          return;
+        }
+        if (event.track.kind === "video") {
+          voiceLog("remote screen track received", {
+            remoteUserId,
+            trackId: event.track.id,
+            streamId: stream.id,
+          });
+          setRemoteScreenStreams((current) => ({ ...current, [remoteUserId]: stream }));
+          event.track.addEventListener("ended", () => {
+            setRemoteScreenStreams((current) => {
+              const next = { ...current };
+              delete next[remoteUserId];
+              return next;
+            });
+          });
           return;
         }
         voiceLog("remote track received", {
@@ -456,6 +581,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           server_id: serverId,
         });
         clearChannel(connectedChannelId);
+        clearLocalScreenState(true);
+        screenSendersRef.current.clear();
+        setRemoteScreenStreams({});
       }
 
       try {
@@ -497,8 +625,11 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         connectedServerIdRef.current = null;
         lastRejoinSocketRef.current = null;
         stopLocalStream();
+        clearLocalScreenState(true);
+        screenSendersRef.current.clear();
         closeAllPeers();
         setRemoteStreams({});
+        setRemoteScreenStreams({});
         clearChannel(channelId);
         setConnectedChannel(null);
         return false;
@@ -510,6 +641,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     [
       clearChannel,
       closeAllPeers,
+      clearLocalScreenState,
       connectedChannelId,
       deafened,
       muted,
@@ -536,10 +668,13 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     connectedServerIdRef.current = null;
     lastRejoinSocketRef.current = null;
     stopLocalStream();
+    clearLocalScreenState(true);
+    screenSendersRef.current.clear();
     closeAllPeers();
     setRemoteStreams({});
+    setRemoteScreenStreams({});
     setConnectedChannel(null);
-  }, [clearChannel, closeAllPeers, connectedChannelId, sendGatewayEvent, setConnectedChannel, stopLocalStream]);
+  }, [clearChannel, clearLocalScreenState, closeAllPeers, connectedChannelId, sendGatewayEvent, setConnectedChannel, stopLocalStream]);
 
   const toggleMuted = useCallback(() => {
     const nextMuted = !muted;
@@ -568,6 +703,59 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       });
     }
   }, [connectedChannelId, deafened, muted, sendGatewayEvent]);
+
+  const toggleScreenShare = useCallback(async (): Promise<boolean> => {
+    if (!connectedChannelIdRef.current) {
+      return false;
+    }
+
+    if (localScreenTrackRef.current) {
+      return await stopScreenShare();
+    }
+
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
+      voiceWarn("screen share is not supported in this environment");
+      return false;
+    }
+
+    let screenStream: MediaStream;
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          frameRate: { ideal: 30, max: 60 },
+        },
+        audio: false,
+      });
+    } catch {
+      return false;
+    }
+
+    const screenTrack = screenStream.getVideoTracks()[0];
+    if (!screenTrack) {
+      screenStream.getTracks().forEach((track) => track.stop());
+      return false;
+    }
+
+    localScreenStreamRef.current = screenStream;
+    localScreenTrackRef.current = screenTrack;
+    setScreenSharing(true);
+
+    screenTrack.onended = () => {
+      void stopScreenShare();
+    };
+
+    for (const [remoteUserId, peer] of peersRef.current.entries()) {
+      try {
+        const sender = peer.addTrack(screenTrack, screenStream);
+        screenSendersRef.current.set(remoteUserId, sender);
+        await renegotiatePeer(remoteUserId);
+      } catch {
+        closePeer(remoteUserId);
+      }
+    }
+
+    return true;
+  }, [closePeer, renegotiatePeer, stopScreenShare]);
 
   const setVolume = useCallback((value: number) => {
     const next = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
@@ -811,11 +999,14 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     if (!connectedChannelId) {
       closeAllPeers();
       setRemoteStreams({});
+      setRemoteScreenStreams({});
       pendingInitialOffersChannelRef.current = null;
       connectedServerIdRef.current = null;
       lastRejoinSocketRef.current = null;
+      screenSendersRef.current.clear();
+      clearLocalScreenState(true);
     }
-  }, [closeAllPeers, connectedChannelId]);
+  }, [clearLocalScreenState, closeAllPeers, connectedChannelId]);
 
   useEffect(() => {
     return () => {
@@ -824,21 +1015,26 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         sendGatewayEventRef.current("VOICE_LEAVE", { channel_id: activeChannelId });
       }
       stopLocalStream();
+      clearLocalScreenState(true);
+      screenSendersRef.current.clear();
       closeAllPeers();
       setRemoteStreams({});
+      setRemoteScreenStreams({});
       if (activeChannelId) {
         clearChannel(activeChannelId);
       }
       setConnectedChannel(null);
     };
-  }, [clearChannel, closeAllPeers, setConnectedChannel, stopLocalStream]);
+  }, [clearChannel, clearLocalScreenState, closeAllPeers, setConnectedChannel, stopLocalStream]);
 
   return {
     connectedChannelId,
     participants,
     remoteStreams,
+    remoteScreenStreams,
     muted,
     deafened,
+    screenSharing,
     volume,
     inputDevices,
     selectedInputDeviceId,
@@ -846,6 +1042,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     leave,
     toggleMuted,
     toggleDeafened,
+    toggleScreenShare,
     setVolume,
     setInputDevice,
   };

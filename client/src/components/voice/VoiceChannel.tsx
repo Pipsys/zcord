@@ -13,8 +13,10 @@ interface VoiceChannelProps {
   connected: boolean;
   participants: VoiceParticipant[];
   remoteStreams: Record<string, MediaStream>;
+  remoteScreenStreams: Record<string, MediaStream>;
   muted: boolean;
   deafened: boolean;
+  screenSharing: boolean;
   volume: number;
   inputDevices: VoiceInputDevice[];
   selectedInputDeviceId: string;
@@ -22,6 +24,7 @@ interface VoiceChannelProps {
   onLeave: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
+  onToggleScreenShare: () => void;
   onVolumeChange: (value: number) => void;
   onInputDeviceChange: (deviceId: string) => void;
 }
@@ -42,8 +45,10 @@ export const VoiceChannel = ({
   connected,
   participants,
   remoteStreams,
+  remoteScreenStreams,
   muted,
   deafened,
+  screenSharing,
   volume,
   inputDevices,
   selectedInputDeviceId,
@@ -51,12 +56,14 @@ export const VoiceChannel = ({
   onLeave,
   onToggleMute,
   onToggleDeafen,
+  onToggleScreenShare,
   onVolumeChange,
   onInputDeviceChange,
 }: VoiceChannelProps) => {
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   const visibleParticipants = useMemo(() => {
     if (!connected) {
@@ -117,8 +124,47 @@ export const VoiceChannel = ({
         const media = audio as HTMLAudioElement & { srcObject: MediaStream | null };
         media.srcObject = null;
       }
+      for (const video of Object.values(videoRefs.current)) {
+        if (!video) {
+          continue;
+        }
+        const media = video as HTMLVideoElement & { srcObject: MediaStream | null };
+        media.srcObject = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    for (const participant of visibleParticipants) {
+      if (participant.user_id === user?.id) {
+        continue;
+      }
+      const video = videoRefs.current[participant.user_id];
+      if (!video) {
+        continue;
+      }
+
+      const nextStream = remoteScreenStreams[participant.user_id] ?? null;
+      const media = video as HTMLVideoElement & { srcObject: MediaStream | null };
+      if (media.srcObject !== nextStream) {
+        media.srcObject = nextStream;
+      }
+      if (nextStream) {
+        video.muted = true;
+        void video.play().catch((error) => {
+          console.warn("[voice] failed to start remote screen playback", {
+            userId: participant.user_id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    }
+  }, [remoteScreenStreams, user?.id, visibleParticipants]);
+
+  const screenParticipants = useMemo(
+    () => visibleParticipants.filter((participant) => participant.user_id !== user?.id && Boolean(remoteScreenStreams[participant.user_id])),
+    [remoteScreenStreams, user?.id, visibleParticipants],
+  );
 
   return (
     <section className="m-4 rounded-xl border border-white/10 bg-black/20 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.35)]">
@@ -171,6 +217,28 @@ export const VoiceChannel = ({
         <div className="mb-4 rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-sm text-paw-text-muted">{t("voice.no_participants")}</div>
       )}
 
+      {connected && screenParticipants.length > 0 ? (
+        <div className="mb-4 space-y-2">
+          {screenParticipants.map((participant) => {
+            const name = toParticipantName(participant, user?.id ?? null, user?.username ?? null);
+            return (
+              <div key={`screen-${participant.user_id}`} className="overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                <div className="border-b border-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{name}</div>
+                <video
+                  ref={(element) => {
+                    videoRefs.current[participant.user_id] = element;
+                  }}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="block max-h-[280px] w-full bg-black/40 object-contain"
+                />
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className="mb-3">
         {!connected ? (
           <button
@@ -187,10 +255,12 @@ export const VoiceChannel = ({
         muted={muted}
         deafened={deafened}
         connected={connected}
+        screenSharing={screenSharing}
         inputDevices={inputDevices}
         selectedInputDeviceId={selectedInputDeviceId}
         onToggleMute={onToggleMute}
         onToggleDeafen={onToggleDeafen}
+        onToggleScreenShare={onToggleScreenShare}
         onLeave={onLeave}
         onVolumeChange={onVolumeChange}
         onInputDeviceChange={onInputDeviceChange}

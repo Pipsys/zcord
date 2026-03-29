@@ -5,10 +5,12 @@ interface VoiceControlsProps {
   muted: boolean;
   deafened: boolean;
   connected: boolean;
+  screenSharing: boolean;
   inputDevices: VoiceInputDevice[];
   selectedInputDeviceId: string;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
+  onToggleScreenShare: () => void;
   onLeave: () => void;
   onVolumeChange: (value: number) => void;
   onInputDeviceChange: (deviceId: string) => void;
@@ -18,10 +20,12 @@ export const VoiceControls = ({
   muted,
   deafened,
   connected,
+  screenSharing,
   inputDevices,
   selectedInputDeviceId,
   onToggleMute,
   onToggleDeafen,
+  onToggleScreenShare,
   onLeave,
   onVolumeChange,
   onInputDeviceChange,
@@ -45,10 +49,17 @@ export const VoiceControls = ({
       </button>
 
       <button
-        disabled
-        className="cursor-not-allowed rounded-md border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-muted opacity-60"
+        onClick={onToggleScreenShare}
+        disabled={!connected}
+        className={`rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold transition ${
+          !connected
+            ? "cursor-not-allowed bg-black/25 text-paw-text-muted opacity-60"
+            : screenSharing
+              ? "bg-[#3ba55d] text-white hover:brightness-110"
+              : "bg-black/25 text-paw-text-secondary hover:text-paw-text-primary"
+        }`}
       >
-        {t("voice.screen_share")}
+        {screenSharing ? t("voice.stop_screen_share") : t("voice.screen_share")}
       </button>
       <button
         disabled
