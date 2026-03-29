@@ -78,7 +78,6 @@ export const VoiceChannel = ({
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
 
-  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -186,28 +185,6 @@ export const VoiceChannel = ({
   const screenShareTiles = useMemo(() => participantTiles.filter((tile) => Boolean(tile.screenStream)), [participantTiles]);
   const regularVoiceTiles = useMemo(() => participantTiles.filter((tile) => !tile.screenStream), [participantTiles]);
   const regularGridClass = useMemo(() => resolveGridClass(regularVoiceTiles.length), [regularVoiceTiles.length]);
-
-  useEffect(() => {
-    for (const participant of visibleParticipants) {
-      if (participant.user_id === user?.id) {
-        continue;
-      }
-
-      const audio = audioRefs.current[participant.user_id];
-      if (!audio) {
-        continue;
-      }
-
-      const nextStream = remoteStreams[participant.user_id] ?? null;
-      const media = audio as HTMLAudioElement & { srcObject: MediaStream | null };
-      if (media.srcObject !== nextStream) {
-        media.srcObject = nextStream;
-      }
-      audio.muted = deafened;
-      audio.volume = volume;
-      void audio.play().catch(() => undefined);
-    }
-  }, [deafened, remoteStreams, user?.id, visibleParticipants, volume]);
 
   useEffect(() => {
     for (const participant of screenParticipants) {
@@ -398,14 +375,6 @@ export const VoiceChannel = ({
         audioContextRef.current = null;
       }
 
-      for (const audio of Object.values(audioRefs.current)) {
-        if (!audio) {
-          continue;
-        }
-        const media = audio as HTMLAudioElement & { srcObject: MediaStream | null };
-        media.srcObject = null;
-      }
-
       for (const video of Object.values(videoRefs.current)) {
         if (!video) {
           continue;
@@ -559,22 +528,6 @@ export const VoiceChannel = ({
           </div>
         )}
       </div>
-
-      {connected
-        ? visibleParticipants
-            .filter((participant) => participant.user_id !== user?.id)
-            .map((participant) => (
-              <audio
-                key={`audio-${participant.user_id}`}
-                ref={(element) => {
-                  audioRefs.current[participant.user_id] = element;
-                }}
-                autoPlay
-                playsInline
-                className="hidden"
-              />
-            ))
-        : null}
 
       <div className="shrink-0 border-t border-white/10 bg-[#10131a] p-3">
         <VoiceControls

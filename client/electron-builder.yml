@@ -1,5 +1,5 @@
-appId: com.rucord.desktop
-productName: Rucord
+appId: com.zcord.desktop
+productName: zcord
 files:
   - dist/**
   - dist-electron/**
@@ -11,7 +11,7 @@ publish: null
 win:
   target:
     - nsis
-  artifactName: "Rucord-Setup-${version}.${ext}"
+  artifactName: "zcord-Setup-${version}.${ext}"
 mac:
   target:
     - dmg

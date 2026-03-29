@@ -8,6 +8,7 @@ import HomePage from "@/pages/Home";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import ServerPage from "@/pages/Server";
+import { RealtimeProvider } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
 import { useUiStore } from "@/store/uiStore";
 
@@ -79,57 +80,59 @@ const App = () => {
 
   return (
     <div className="h-screen overflow-hidden bg-paw-bg-primary text-paw-text-primary">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={location.pathname}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.2 }}
-          className="h-full"
-        >
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route
-              path="/app/home"
-              element={
-                <ProtectedRoute>
-                  <div className="flex h-full flex-col">
-                    <TitleBar />
-                    <HomePage />
-                  </div>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/app/server/:serverId"
-              element={
-                <ProtectedRoute>
-                  <div className="flex h-full flex-col">
-                    <TitleBar />
-                    <ServerPage />
-                  </div>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/app/settings"
-              element={
-                <ProtectedRoute>
-                  <div className="flex h-full flex-col">
-                    <TitleBar />
-                    <Suspense fallback={<div className="grid h-full place-items-center text-paw-text-secondary">{t("common.loading_settings")}</div>}>
-                      <SettingsPage />
-                    </Suspense>
-                  </div>
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/app/home" replace />} />
-          </Routes>
-        </motion.div>
-      </AnimatePresence>
+      <RealtimeProvider>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="h-full"
+          >
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route
+                path="/app/home"
+                element={
+                  <ProtectedRoute>
+                    <div className="flex h-full flex-col">
+                      <TitleBar />
+                      <HomePage />
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/server/:serverId"
+                element={
+                  <ProtectedRoute>
+                    <div className="flex h-full flex-col">
+                      <TitleBar />
+                      <ServerPage />
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/settings"
+                element={
+                  <ProtectedRoute>
+                    <div className="flex h-full flex-col">
+                      <TitleBar />
+                      <Suspense fallback={<div className="grid h-full place-items-center text-paw-text-secondary">{t("common.loading_settings")}</div>}>
+                        <SettingsPage />
+                      </Suspense>
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/app/home" replace />} />
+            </Routes>
+          </motion.div>
+        </AnimatePresence>
+      </RealtimeProvider>
 
       <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[320px] max-w-[92vw] flex-col gap-2">
         <AnimatePresence initial={false}>

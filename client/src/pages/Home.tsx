@@ -26,8 +26,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { useWebSocket } from "@/hooks/useWebSocket";
 import { useI18n } from "@/i18n/provider";
+import { useRealtime } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
 import { useMessageStore } from "@/store/messageStore";
 import { useServerStore } from "@/store/serverStore";
@@ -95,7 +95,7 @@ const parseDmPeerId = (channel: Channel, currentUserId: string | null): string |
 const HomePage = () => {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const socket = useWebSocket();
+  const { socket } = useRealtime();
 
   const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clearAuth);

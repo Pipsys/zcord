@@ -251,7 +251,15 @@ const getWebSocketCandidates = (): string[] => {
   return Array.from(new Set(candidates));
 };
 
-export const useWebSocket = (): WebSocket | null => {
+export type GatewayConnectionStatus = "offline" | "connecting" | "connected" | "reconnecting";
+
+interface UseWebSocketResult {
+  socket: WebSocket | null;
+  status: GatewayConnectionStatus;
+  latencyMs: number | null;
+}
+
+export const useWebSocket = (): UseWebSocketResult => {
   const token = useAuthStore((state) => state.token);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const upsertMessage = useMessageStore((state) => state.upsertMessage);
@@ -268,7 +276,10 @@ export const useWebSocket = (): WebSocket | null => {
   const enqueueSignal = useVoiceStore((state) => state.enqueueSignal);
 
   const deliveryAckedRef = useRef<Set<string>>(new Set());
+  const heartbeatSentAtRef = useRef<number | null>(null);
   const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [status, setStatus] = useState<GatewayConnectionStatus>("offline");
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -283,6 +294,9 @@ export const useWebSocket = (): WebSocket | null => {
         current?.close();
         return null;
       });
+      heartbeatSentAtRef.current = null;
+      setLatencyMs(null);
+      setStatus("offline");
       return;
     }
 
@@ -316,6 +330,7 @@ export const useWebSocket = (): WebSocket | null => {
 
       clearReconnect();
       clearHeartbeat();
+      setStatus(candidateIndex === 0 ? "connecting" : "reconnecting");
 
       const meResponse = await window.pawcord.request<{ id: string }>({ method: "GET", path: "/users/me" });
       const latestToken = await window.pawcord.auth.getToken();
@@ -328,6 +343,8 @@ export const useWebSocket = (): WebSocket | null => {
           current?.close();
           return null;
         });
+        setStatus("offline");
+        setLatencyMs(null);
         return;
       }
 
@@ -337,18 +354,38 @@ export const useWebSocket = (): WebSocket | null => {
       setSocket(next);
 
       let opened = false;
+      const sendHeartbeat = () => {
+        if (next.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        heartbeatSentAtRef.current = Date.now();
+        next.send(
+          JSON.stringify({
+            t: "HEARTBEAT",
+            d: { sent_at: heartbeatSentAtRef.current },
+          }),
+        );
+      };
 
       next.onopen = () => {
         opened = true;
+        setStatus("connected");
+        sendHeartbeat();
         heartbeat = window.setInterval(() => {
-          if (next.readyState === WebSocket.OPEN) {
-            next.send(JSON.stringify({ t: "HEARTBEAT", d: {} }));
-          }
-        }, 41_250);
+          sendHeartbeat();
+        }, 15_000);
       };
 
       next.onmessage = (event) => {
         const payload = JSON.parse(event.data) as GatewayEvent;
+        if (payload.t === "HEARTBEAT_ACK") {
+          const sentAt = heartbeatSentAtRef.current;
+          if (sentAt) {
+            setLatencyMs(Math.max(1, Date.now() - sentAt));
+            heartbeatSentAtRef.current = null;
+          }
+          return;
+        }
         if (payload.t === "MESSAGE_CREATE") {
           const message = parseMessagePayload(payload.d);
           if (!message) {
@@ -481,6 +518,8 @@ export const useWebSocket = (): WebSocket | null => {
         if (disposed) {
           return;
         }
+        setStatus("reconnecting");
+        heartbeatSentAtRef.current = null;
 
         if (!opened && candidateIndex < candidates.length - 1) {
           candidateIndex += 1;
@@ -502,8 +541,15 @@ export const useWebSocket = (): WebSocket | null => {
       clearHeartbeat();
       ws?.close();
       setSocket((current) => (current === ws ? null : current));
+      heartbeatSentAtRef.current = null;
+      setStatus("offline");
+      setLatencyMs(null);
     };
   }, [clearTyping, currentUserId, deleteMessage, enqueueSignal, markDelivered, markRead, removeParticipant, setParticipantsSnapshot, setTyping, token, updateParticipantState, upsertMessage, upsertParticipant]);
 
-  return socket;
+  return {
+    socket,
+    status,
+    latencyMs,
+  };
 };

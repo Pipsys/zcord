@@ -25,9 +25,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
-import { useVoiceRoom } from "@/hooks/useVoiceRoom";
-import { useWebSocket } from "@/hooks/useWebSocket";
 import { useI18n } from "@/i18n/provider";
+import { useRealtime } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
 import { useChannelStore } from "@/store/channelStore";
 import { useMessageStore } from "@/store/messageStore";
@@ -51,8 +50,7 @@ const compactPreview = (value: string): string => {
 const ServerPage = () => {
   const { t } = useI18n();
   const { serverId } = useParams();
-  const socket = useWebSocket();
-  const voiceRoom = useVoiceRoom(socket);
+  const { socket, voiceRoom, gatewayStatus, gatewayLatencyMs } = useRealtime();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const currentUsername = useAuthStore((state) => state.user?.username ?? null);
 
@@ -582,6 +580,8 @@ const ServerPage = () => {
         onOpenServerSettings={openServerSettings}
         canManageServer={canManageServer}
         isCreatingChannel={createChannel.isPending}
+        gatewayStatus={gatewayStatus}
+        gatewayLatencyMs={gatewayLatencyMs}
       />
 
       <section className="flex min-w-0 flex-1 flex-col bg-paw-bg-primary">

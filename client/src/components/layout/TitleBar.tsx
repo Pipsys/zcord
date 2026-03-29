@@ -4,9 +4,10 @@ import { useLocation } from "react-router-dom";
 
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/i18n/provider";
+import { useRealtime } from "@/realtime/RealtimeProvider";
 import { useChannelStore } from "@/store/channelStore";
 import { useServerStore } from "@/store/serverStore";
-import rucordLogo from "../../../animal.png";
+import zcordLogo from "../../../animal.png";
 
 interface WindowControlButtonProps {
   title: string;
@@ -36,6 +37,13 @@ export const TitleBar = () => {
   const activeServerId = useServerStore((state) => state.activeServerId);
   const channels = useChannelStore((state) => state.channels);
   const activeChannelId = useChannelStore((state) => state.activeChannelId);
+  const { voiceRoom, gatewayLatencyMs, gatewayStatus } = useRealtime();
+  const connectedVoiceChannel = useMemo(() => {
+    if (!voiceRoom.connectedChannelId) {
+      return null;
+    }
+    return channels.find((item) => item.id === voiceRoom.connectedChannelId) ?? null;
+  }, [channels, voiceRoom.connectedChannelId]);
   const isMac = useMemo(() => {
     const bridgePlatform = typeof window !== "undefined" && "pawcord" in window ? window.pawcord.system.platform : "";
     if (bridgePlatform) {
@@ -69,13 +77,23 @@ export const TitleBar = () => {
       {isMac ? <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" /> : null}
 
       <div className={clsx("min-w-0 flex items-center", isMac ? "gap-3 pl-[76px]" : "gap-2")}>
-        <img src={rucordLogo} alt="Rucord" className="h-4 w-4 rounded object-contain" />
-        <span className={clsx("font-semibold uppercase text-paw-text-muted", isMac ? "text-[11px] tracking-[0.18em]" : "text-xs tracking-[0.08em]")}>Rucord</span>
+        <img src={zcordLogo} alt="zcord" className="h-4 w-4 rounded object-contain" />
+        <span className={clsx("font-semibold uppercase text-paw-text-muted", isMac ? "text-[11px] tracking-[0.18em]" : "text-xs tracking-[0.08em]")}>zcord</span>
         <span className="text-xs text-paw-text-muted">/</span>
         <span className={clsx("truncate font-semibold text-paw-text-secondary", isMac ? "text-[13px]" : "text-sm")}>{sectionTitle}</span>
       </div>
 
       <div className={clsx("no-drag-region flex items-center", isMac ? "gap-2" : "gap-1")}>
+        {voiceRoom.connectedChannelId ? (
+          <div className="hidden max-w-[260px] items-center gap-2 rounded-md border border-[#3ba55d]/35 bg-[#1c2b22] px-2.5 py-1 sm:flex">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#43b581]" />
+            <span className="truncate text-xs font-semibold text-[#9cf5ba]">{connectedVoiceChannel?.name ? `#${connectedVoiceChannel.name}` : t("voice.connected")}</span>
+            <span className="text-[11px] text-paw-text-muted">
+              {gatewayStatus === "connected" && gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)}ms` : gatewayStatus}
+            </span>
+          </div>
+        ) : null}
+
         <LanguageSwitcher compact />
 
         {!isMac ? (

@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useMeQuery } from "@/api/queries";
 import { Avatar } from "@/components/ui/Avatar";
 import { ContextMenu } from "@/components/ui/ContextMenu";
+import type { GatewayConnectionStatus } from "@/hooks/useWebSocket";
 import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
 import { useChannelStore } from "@/store/channelStore";
@@ -21,6 +22,8 @@ interface ChannelListProps {
   onOpenServerSettings: () => void;
   canManageServer: boolean;
   isCreatingChannel: boolean;
+  gatewayStatus: GatewayConnectionStatus;
+  gatewayLatencyMs: number | null;
 }
 
 const toParticipantName = (participant: VoiceParticipant, currentUserId: string | null, currentUsername: string | null): string => {
@@ -58,6 +61,8 @@ export const ChannelList = ({
   onOpenServerSettings,
   canManageServer,
   isCreatingChannel,
+  gatewayStatus,
+  gatewayLatencyMs,
 }: ChannelListProps) => {
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
@@ -103,6 +108,24 @@ export const ChannelList = ({
     }
     return next;
   }, [effectiveUser?.id, effectiveUser?.username, participantsByChannel, voiceChannels]);
+  const gatewayStatusLabel = useMemo(() => {
+    if (gatewayStatus === "connected") {
+      return t("voice.connected");
+    }
+    if (gatewayStatus === "connecting") {
+      return "Connecting";
+    }
+    if (gatewayStatus === "reconnecting") {
+      return "Reconnecting";
+    }
+    return t("voice.not_connected");
+  }, [gatewayStatus, t]);
+  const connectedVoiceChannel = useMemo(() => {
+    if (!connectedVoiceChannelId) {
+      return null;
+    }
+    return channels.find((item) => item.id === connectedVoiceChannelId) ?? null;
+  }, [channels, connectedVoiceChannelId]);
 
   const actions = useMemo(
     () => [
@@ -288,6 +311,41 @@ export const ChannelList = ({
       </div>
 
       <footer className="border-t border-white/10 bg-black/20 px-2 py-2">
+        {connectedVoiceChannelId ? (
+          <div className="mb-2 rounded-lg border border-[#3ba55d]/35 bg-[#1a2b22] px-2 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-xs font-semibold text-[#9cf5ba]">{t("voice.connected")}</p>
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  gatewayStatus === "connected"
+                    ? "border-[#3ba55d]/35 bg-[#3ba55d]/20 text-[#9cf5ba]"
+                    : gatewayStatus === "reconnecting" || gatewayStatus === "connecting"
+                      ? "border-[#f4b942]/35 bg-[#f4b942]/20 text-[#ffd890]"
+                      : "border-white/15 bg-black/20 text-paw-text-muted"
+                }`}
+              >
+                {gatewayStatusLabel}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-paw-text-secondary">
+              #{connectedVoiceChannel?.name ?? t("voice.title")}
+              {server?.name ? ` / ${server.name}` : ""}
+            </p>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] text-paw-text-muted">
+                Ping: {gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)} ms` : "—"}
+              </p>
+              <button
+                type="button"
+                onClick={onLeaveVoice}
+                className="rounded-md border border-white/15 bg-black/30 px-2 py-0.5 text-[11px] font-semibold text-paw-text-secondary transition hover:bg-black/45 hover:text-paw-text-primary"
+              >
+                {t("voice.leave")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-2">
           <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
           <div className="min-w-0 flex-1">

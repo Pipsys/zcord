@@ -3,9 +3,10 @@ import { Link, useLocation } from "react-router-dom";
 
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useServerStore } from "@/store/serverStore";
-import rucordLogo from "../../../animal.png";
+import zcordLogo from "../../../animal.png";
 
-const itemBase = "relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl text-sm font-semibold transition";
+const homeItemBase = "relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl text-sm font-semibold transition";
+const serverItemBase = "relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl text-sm font-semibold transition";
 
 export const Sidebar = () => {
   const location = useLocation();
@@ -22,7 +23,7 @@ export const Sidebar = () => {
       <Tooltip label="Home" side="right">
         <Link to="/app/home" onClick={() => setActiveServer(null)}>
           <motion.div
-            className={itemBase}
+            className={homeItemBase}
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.97 }}
             style={{
@@ -31,7 +32,9 @@ export const Sidebar = () => {
               color: "var(--color-text-primary)",
             }}
           >
-            <img src={rucordLogo} alt="Rucord" className="block h-6 w-6 rounded-lg object-contain" />
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-[#0f131a]/70 p-0.5">
+              <img src={zcordLogo} alt="zcord" className="block h-full w-full object-contain" />
+            </span>
             {homeActive ? <span className="absolute -left-[11px] h-8 w-1 rounded-r bg-white" /> : null}
           </motion.div>
         </Link>
@@ -46,7 +49,7 @@ export const Sidebar = () => {
             <Tooltip key={server.id} label={server.name} side="right">
               <Link to={`/app/server/${server.id}`} onClick={() => setActiveServer(server.id)}>
                 <motion.div
-                  className={itemBase}
+                  className={serverItemBase}
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.97 }}
                   style={{
