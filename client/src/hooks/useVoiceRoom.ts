@@ -110,6 +110,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
   const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
+  const lastRejoinSocketRef = useRef<WebSocket | null>(null);
   const sendGatewayEventRef = useRef<(type: string, data: Record<string, unknown>) => boolean>(() => false);
 
   const participants = useMemo(() => {
@@ -474,6 +475,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       setRemoteStreams({});
       pendingInitialOffersChannelRef.current = channelId;
       connectedServerIdRef.current = serverId;
+      lastRejoinSocketRef.current = null;
       setConnectedChannel(channelId);
 
       sendGatewayEvent("VOICE_JOIN", {
@@ -493,6 +495,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         voiceWarn("participants snapshot timeout", { channelId });
         pendingInitialOffersChannelRef.current = null;
         connectedServerIdRef.current = null;
+        lastRejoinSocketRef.current = null;
         stopLocalStream();
         closeAllPeers();
         setRemoteStreams({});
@@ -531,6 +534,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
     pendingInitialOffersChannelRef.current = null;
     connectedServerIdRef.current = null;
+    lastRejoinSocketRef.current = null;
     stopLocalStream();
     closeAllPeers();
     setRemoteStreams({});
@@ -766,6 +770,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     const rejoin = async () => {
+      if (lastRejoinSocketRef.current === socket) {
+        return;
+      }
       if (!localStreamRef.current) {
         return;
       }
@@ -777,6 +784,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       const serverId = connectedServerIdRef.current;
       voiceLog("rejoin voice after websocket open", { channelId, serverId });
+      lastRejoinSocketRef.current = socket;
       sendGatewayEventRef.current("VOICE_JOIN", {
         channel_id: channelId,
         server_id: serverId,
@@ -805,6 +813,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       setRemoteStreams({});
       pendingInitialOffersChannelRef.current = null;
       connectedServerIdRef.current = null;
+      lastRejoinSocketRef.current = null;
     }
   }, [closeAllPeers, connectedChannelId]);
 
