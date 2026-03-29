@@ -6,6 +6,28 @@ import type { Channel, FriendRelation, Message, Server, ServerMember, User } fro
 
 export const useMeQuery = () => useQuery({ queryKey: ["me"], queryFn: () => get<User>("/users/me") });
 
+export const useUpdateMeMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      username?: string;
+      email?: string;
+      current_password?: string;
+      new_password?: string;
+      avatar_url?: string | null;
+      banner_url?: string | null;
+      bio?: string | null;
+      custom_status?: string | null;
+      status?: User["status"];
+    }) => patch<User>("/users/me", payload),
+    onSuccess: (updatedUser) => {
+      queryClient.setQueryData(["me"], updatedUser);
+      void queryClient.invalidateQueries({ queryKey: ["friends"] });
+      void queryClient.invalidateQueries({ queryKey: ["server-members"] });
+    },
+  });
+};
+
 export const useServersQuery = () =>
   useQuery({
     queryKey: ["servers"],

@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -11,6 +11,7 @@ from app.models.user import User
 from app.routers.deps import get_current_user
 from app.schemas.user import UserRead, UserUpdate
 from app.services.media_service import MediaService
+from app.utils.password import hash_password, verify_password
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -49,6 +50,37 @@ async def update_me(
 ):
     media_service = MediaService(session)
     update_data = payload.model_dump(exclude_unset=True)
+
+    current_password = update_data.pop("current_password", None)
+    new_password = update_data.pop("new_password", None)
+
+    if (current_password is None) ^ (new_password is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both current_password and new_password are required to change password",
+        )
+
+    next_username = update_data.get("username")
+    if isinstance(next_username, str) and next_username != current_user.username:
+        username_exists_stmt = select(User.id).where(and_(User.username == next_username, User.id != current_user.id))
+        username_exists = (await session.execute(username_exists_stmt)).scalar_one_or_none()
+        if username_exists is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
+
+    next_email = update_data.get("email")
+    if isinstance(next_email, str) and next_email != current_user.email:
+        email_exists_stmt = select(User.id).where(and_(User.email == next_email, User.id != current_user.id))
+        email_exists = (await session.execute(email_exists_stmt)).scalar_one_or_none()
+        if email_exists is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
+
+    if current_password is not None and new_password is not None:
+        if not verify_password(current_password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        if current_password == new_password:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must differ from current password")
+        current_user.password_hash = hash_password(new_password)
+
     for key, value in update_data.items():
         setattr(current_user, key, value)
     await session.commit()

@@ -92,7 +92,7 @@ export const ChannelList = ({
   gatewayStatus,
   gatewayLatencyMs,
 }: ChannelListProps) => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const user = useAuthStore((state) => state.user);
   const { data: meUser } = useMeQuery();
   const channels = useChannelStore((state) => state.channels);
@@ -269,6 +269,8 @@ export const ChannelList = ({
             {channelParticipants.map((participant) => {
               const isSelf = participant.user_id === effectiveUser?.id;
               const name = toParticipantName(participant, effectiveUser?.id ?? null, effectiveUser?.username ?? null);
+              const youLabelRaw = t("voice.you");
+              const youLabel = typeof youLabelRaw === "string" && youLabelRaw.trim().length > 0 ? youLabelRaw : locale === "ru" ? "Вы" : "you";
               return (
                 <div
                   key={`${channel.id}-${participant.user_id}`}
@@ -281,7 +283,7 @@ export const ChannelList = ({
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">
                       {name}
-                      {isSelf ? ` (${t("voice.you")})` : ""}
+                      {isSelf ? ` (${youLabel})` : ""}
                     </span>
                     <VoiceStateIndicators className="shrink-0" muted={participant.muted} deafened={participant.deafened} />
                   </span>

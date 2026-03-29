@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
@@ -28,6 +28,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useI18n } from "@/i18n/provider";
 import { useRealtime } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
+import { useChannelStore } from "@/store/channelStore";
 import { useMessageStore } from "@/store/messageStore";
 import { useServerStore } from "@/store/serverStore";
 import { useUiStore } from "@/store/uiStore";
@@ -91,14 +92,34 @@ const parseDmPeerId = (channel: Channel, currentUserId: string | null): string |
   return null;
 };
 
+const CHANNEL_LIST_MIN_WIDTH = 220;
+const CHANNEL_LIST_MAX_WIDTH = 360;
+const CHANNEL_LIST_DEFAULT_WIDTH = 240;
+const CHANNEL_LIST_WIDTH_STORAGE_KEY = "zcord.channel-list-width";
+
+const clampChannelListWidth = (value: number): number =>
+  Math.min(CHANNEL_LIST_MAX_WIDTH, Math.max(CHANNEL_LIST_MIN_WIDTH, value));
+
+const readStoredChannelListWidth = (): number => {
+  if (typeof window === "undefined") {
+    return CHANNEL_LIST_DEFAULT_WIDTH;
+  }
+  const raw = window.localStorage.getItem(CHANNEL_LIST_WIDTH_STORAGE_KEY);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return CHANNEL_LIST_DEFAULT_WIDTH;
+  }
+  return clampChannelListWidth(parsed);
+};
+
 const HomePage = () => {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const { socket } = useRealtime();
+  const { socket, voiceRoom, gatewayStatus, gatewayLatencyMs } = useRealtime();
 
   const user = useAuthStore((state) => state.user);
-  const clearAuth = useAuthStore((state) => state.clearAuth);
 
+  const channels = useChannelStore((state) => state.channels);
   const setServers = useServerStore((state) => state.setServers);
   const servers = useServerStore((state) => state.servers);
   const setActiveServer = useServerStore((state) => state.setActiveServer);
@@ -120,6 +141,12 @@ const HomePage = () => {
   const [draftPreset, setDraftPreset] = useState<{ key: string; text: string; mode?: "replace" | "append" } | null>(null);
   const [pendingDeleteMessage, setPendingDeleteMessage] = useState<Message | null>(null);
   const [unreadByChannel, setUnreadByChannel] = useState<Record<string, number>>({});
+  const [panelWidth, setPanelWidth] = useState<number>(() => readStoredChannelListWidth());
+  const resizeStateRef = useRef<{ active: boolean; startX: number; startWidth: number }>({
+    active: false,
+    startX: 0,
+    startWidth: CHANNEL_LIST_DEFAULT_WIDTH,
+  });
   const knownLastMessageByChannelRef = useRef<Record<string, string>>({});
   const prefetchedChannelIdsRef = useRef<Set<string>>(new Set());
   const lastReadAckByChannelRef = useRef<Record<string, string>>({});
@@ -179,6 +206,80 @@ const HomePage = () => {
 
   const effectiveUser = user ?? meUser ?? null;
   const currentUserId = effectiveUser?.id ?? null;
+
+  const handleResizeMove = useCallback((event: PointerEvent) => {
+    const state = resizeStateRef.current;
+    if (!state.active) {
+      return;
+    }
+    const deltaX = event.clientX - state.startX;
+    setPanelWidth(clampChannelListWidth(state.startWidth + deltaX));
+  }, []);
+
+  const stopResize = useCallback(() => {
+    if (!resizeStateRef.current.active) {
+      return;
+    }
+    resizeStateRef.current.active = false;
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    window.removeEventListener("pointermove", handleResizeMove);
+    window.removeEventListener("pointerup", stopResize);
+  }, [handleResizeMove]);
+
+  const startResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      resizeStateRef.current.active = true;
+      resizeStateRef.current.startX = event.clientX;
+      resizeStateRef.current.startWidth = panelWidth;
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      window.addEventListener("pointermove", handleResizeMove);
+      window.addEventListener("pointerup", stopResize);
+    },
+    [handleResizeMove, panelWidth, stopResize],
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(CHANNEL_LIST_WIDTH_STORAGE_KEY, String(Math.round(panelWidth)));
+  }, [panelWidth]);
+
+  useEffect(() => {
+    return () => {
+      stopResize();
+    };
+  }, [stopResize]);
+
+  const gatewayStatusLabel = useMemo(() => {
+    if (gatewayStatus === "connected") {
+      return t("voice.connected");
+    }
+    if (gatewayStatus === "connecting") {
+      return "Connecting";
+    }
+    if (gatewayStatus === "reconnecting") {
+      return "Reconnecting";
+    }
+    return t("voice.not_connected");
+  }, [gatewayStatus, t]);
+
+  const connectedVoiceChannel = useMemo(() => {
+    if (!voiceRoom.connectedChannelId) {
+      return null;
+    }
+    return channels.find((item) => item.id === voiceRoom.connectedChannelId) ?? null;
+  }, [channels, voiceRoom.connectedChannelId]);
+
+  const connectedVoiceServer = useMemo(() => {
+    if (!connectedVoiceChannel?.server_id) {
+      return null;
+    }
+    return servers.find((item) => item.id === connectedVoiceChannel.server_id) ?? null;
+  }, [connectedVoiceChannel?.server_id, servers]);
 
   const dmChannelByPeerId = useMemo(() => {
     const map: Record<string, Channel> = {};
@@ -603,7 +704,7 @@ const HomePage = () => {
 
   return (
     <div className="flex h-full overflow-hidden bg-paw-bg-primary">
-      <aside className="flex h-full w-80 flex-col border-r border-black/35 bg-paw-bg-secondary p-2">
+      <aside className="relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary p-2" style={{ width: `${panelWidth}px` }}>
         <div className="mb-2 space-y-1 px-1">
           <button
             type="button"
@@ -695,6 +796,41 @@ const HomePage = () => {
           })}
         </div>
 
+        {voiceRoom.connectedChannelId ? (
+          <div className="mt-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-[12px] font-semibold leading-4 text-[#8ee6a8]">{t("voice.connected")}</p>
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-3 tracking-wide ${
+                  gatewayStatus === "connected"
+                    ? "border-[#248046]/35 bg-[#248046]/25 text-[#8ee6a8]"
+                    : gatewayStatus === "reconnecting" || gatewayStatus === "connecting"
+                      ? "border-[#f4b942]/35 bg-[#f4b942]/20 text-[#ffd890]"
+                      : "border-white/15 bg-[#1e1f22] text-paw-text-muted"
+                }`}
+              >
+                {gatewayStatusLabel}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-paw-text-secondary">
+              #{connectedVoiceChannel?.name ?? t("voice.title")}
+              {connectedVoiceServer?.name ? ` / ${connectedVoiceServer.name}` : ""}
+            </p>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] text-paw-text-muted">
+                Ping: {gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)} ms` : "-"}
+              </p>
+              <button
+                type="button"
+                onClick={() => void voiceRoom.leave()}
+                className="rounded-md border border-white/15 bg-[#1e1f22] px-2 py-0.5 text-[11px] font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+              >
+                {t("voice.leave")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-2 rounded-lg border border-white/10 bg-[#232428] p-2">
           <div className="flex items-center gap-2">
             <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
@@ -703,15 +839,20 @@ const HomePage = () => {
               <p className="truncate text-xs text-paw-text-muted">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
             </div>
           </div>
-          <div className="mt-2 flex gap-1">
-            <Link to="/app/settings" className="flex-1">
+          <div className="mt-2">
+            <Link to="/app/settings" className="block w-full">
               <Button className="w-full bg-[#2b2d31] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary shadow-none hover:bg-[#35373c]">{t("home.settings")}</Button>
             </Link>
-            <Button className="flex-1 bg-[#da373c] px-2 py-1 text-xs font-semibold leading-4 shadow-none hover:bg-[#e0484d]" onClick={() => void clearAuth()}>
-              {t("home.logout")}
-            </Button>
           </div>
         </div>
+
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize channels panel"
+          onPointerDown={startResize}
+          className="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-white/10"
+        />
       </aside>
 
       {selectedDm ? (

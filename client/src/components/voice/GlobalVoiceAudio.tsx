@@ -20,15 +20,31 @@ export const GlobalVoiceAudio = ({ connectedChannelId, participants, remoteStrea
     [currentUserId, participants],
   );
 
+  const remoteTrackEntries = useMemo(
+    () =>
+      remoteParticipants.flatMap((participant) => {
+        const stream = remoteStreams[participant.user_id];
+        if (!stream) {
+          return [];
+        }
+        return stream.getAudioTracks().map((track) => ({
+          key: `${participant.user_id}:${track.id}`,
+          userId: participant.user_id,
+          track,
+        }));
+      }),
+    [remoteParticipants, remoteStreams],
+  );
+
   useEffect(() => {
-    const aliveUserIds = new Set(remoteParticipants.map((participant) => participant.user_id));
-    for (const participant of remoteParticipants) {
-      const audio = audioRefs.current[participant.user_id];
+    const aliveTrackKeys = new Set(remoteTrackEntries.map((entry) => entry.key));
+    for (const entry of remoteTrackEntries) {
+      const audio = audioRefs.current[entry.key];
       if (!audio) {
         continue;
       }
 
-      const nextStream = remoteStreams[participant.user_id] ?? null;
+      const nextStream = new MediaStream([entry.track]);
       const media = audio as HTMLAudioElement & { srcObject: MediaStream | null };
       if (media.srcObject !== nextStream) {
         media.srcObject = nextStream;
@@ -39,7 +55,7 @@ export const GlobalVoiceAudio = ({ connectedChannelId, participants, remoteStrea
     }
 
     for (const [userId, element] of Object.entries(audioRefs.current)) {
-      if (aliveUserIds.has(userId)) {
+      if (aliveTrackKeys.has(userId)) {
         continue;
       }
       if (element) {
@@ -48,7 +64,7 @@ export const GlobalVoiceAudio = ({ connectedChannelId, participants, remoteStrea
       }
       delete audioRefs.current[userId];
     }
-  }, [deafened, remoteParticipants, remoteStreams, volume]);
+  }, [deafened, remoteTrackEntries, volume]);
 
   useEffect(() => {
     return () => {
@@ -63,17 +79,17 @@ export const GlobalVoiceAudio = ({ connectedChannelId, participants, remoteStrea
     };
   }, []);
 
-  if (!connectedChannelId || remoteParticipants.length === 0) {
+  if (!connectedChannelId || remoteTrackEntries.length === 0) {
     return null;
   }
 
   return (
     <>
-      {remoteParticipants.map((participant) => (
+      {remoteTrackEntries.map((entry) => (
         <audio
-          key={`global-voice-audio-${participant.user_id}`}
+          key={`global-voice-audio-${entry.key}`}
           ref={(element) => {
-            audioRefs.current[participant.user_id] = element;
+            audioRefs.current[entry.key] = element;
           }}
           autoPlay
           playsInline

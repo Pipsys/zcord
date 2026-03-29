@@ -26,6 +26,10 @@ class UserRead(StrictSchema):
 
 
 class UserUpdate(StrictSchema):
+    username: str | None = Field(default=None, min_length=2, max_length=32)
+    email: EmailStr | None = None
+    current_password: str | None = Field(default=None, min_length=8, max_length=128)
+    new_password: str | None = Field(default=None, min_length=8, max_length=128)
     avatar_url: str | None = None
     banner_url: str | None = None
     bio: str | None = Field(default=None, max_length=190)
