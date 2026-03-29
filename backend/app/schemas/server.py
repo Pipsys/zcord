@@ -43,4 +43,7 @@ class ServerMemberRead(StrictSchema):
     nickname: str | None
     avatar_url: str | None
     status: UserStatus
+    is_online: bool = False
+    was_recently_online: bool = False
+    last_seen_at: datetime | None = None
     joined_at: datetime

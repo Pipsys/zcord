@@ -37,19 +37,25 @@ const toParticipantName = (participant: VoiceParticipant, currentUserId: string 
 };
 
 const HashIcon = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
+  <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
     <path d="M10 4L8 20M16 4L14 20M4 9H20M3 15H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
 
 const VoiceIcon = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
+  <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
     <path d="M5 8V16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     <path d="M9 6V18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     <path d="M13 4V20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     <path d="M17 8V16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
+
+const sectionHeadingClass = "px-2 text-[11px] font-semibold uppercase tracking-[0.04em] leading-4 text-paw-text-muted";
+const channelRowBaseClass =
+  "group flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[15px] leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
+const iconActionButtonClass =
+  "grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition-colors hover:bg-white/10 hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-50";
 
 export const ChannelList = ({
   connectedVoiceChannelId,
@@ -149,15 +155,18 @@ export const ChannelList = ({
     const channelParticipants = voiceParticipantsByChannel[channel.id] ?? [];
 
     return (
-      <div key={channel.id} className="rounded-lg">
+      <div key={channel.id} className="rounded-md">
         <div
-          className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[14px] transition-all duration-150 ${
+          className={`group flex h-9 items-center gap-2 rounded-md px-2.5 text-[15px] leading-5 transition-colors duration-150 ${
             active
-              ? "bg-paw-bg-elevated text-paw-text-primary shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-              : "text-paw-text-muted hover:bg-paw-bg-elevated/70 hover:text-paw-text-secondary"
+              ? "bg-[#404249] text-paw-text-primary"
+              : "text-paw-text-muted hover:bg-[#35373c] hover:text-paw-text-secondary"
           }`}
         >
-          <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setActiveChannel(channel.id)}>
+          <button
+            className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
+            onClick={() => setActiveChannel(channel.id)}
+          >
             <span>
               <VoiceIcon />
             </span>
@@ -165,8 +174,8 @@ export const ChannelList = ({
           </button>
 
           <button
-            className={`rounded-md px-2 py-0.5 text-xs font-medium transition-colors ${
-              connected ? "bg-[#3ba55d] text-white hover:bg-[#43b967]" : "bg-white/10 text-paw-text-secondary hover:bg-white/15 hover:text-white"
+            className={`rounded px-2 py-0.5 text-[11px] font-semibold leading-4 tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+              connected ? "bg-[#248046] text-white hover:bg-[#2a9351]" : "bg-[#41434a] text-paw-text-secondary hover:bg-[#4a4d55] hover:text-white"
             }`}
             onClick={() => {
               if (connected) {
@@ -181,14 +190,14 @@ export const ChannelList = ({
         </div>
 
         {channelParticipants.length > 0 ? (
-          <div className="ml-6 mt-1 space-y-1 border-l border-white/10 pl-2">
+          <div className="ml-6 mt-1 space-y-0.5 border-l border-white/10 pl-2">
             {channelParticipants.map((participant) => {
               const isSelf = participant.user_id === effectiveUser?.id;
               const name = toParticipantName(participant, effectiveUser?.id ?? null, effectiveUser?.username ?? null);
               return (
                 <div
                   key={`${channel.id}-${participant.user_id}`}
-                  className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-paw-text-secondary transition-colors hover:bg-white/5"
+                  className="flex h-7 items-center gap-2 rounded-md px-1.5 text-[12px] leading-4 text-paw-text-secondary transition-colors hover:bg-white/10"
                 >
                   <Avatar src={participant.avatar_url ?? null} label={name} size="sm" online={!participant.deafened} />
                   <span className="min-w-0 flex-1 truncate">
@@ -196,7 +205,7 @@ export const ChannelList = ({
                     {isSelf ? ` (${t("voice.you")})` : ""}
                   </span>
                   {participant.screen_sharing ? (
-                    <span className="rounded bg-[#da373c] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    <span className="rounded bg-[#da373c] px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-3 tracking-wide text-white">
                       {t("voice.live_badge")}
                     </span>
                   ) : null}
@@ -210,15 +219,15 @@ export const ChannelList = ({
   };
 
   return (
-    <section className="flex h-full w-60 flex-col border-r border-white/10 bg-black/20 backdrop-blur-sm">
-      <header className="h-12 border-b border-white/10 px-4">
+    <section className="flex h-full w-60 flex-col border-r border-black/35 bg-paw-bg-secondary">
+      <header className="h-12 border-b border-black/35 px-3 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
         <div className="flex h-full items-center">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
             <h2 className="truncate text-[15px] font-semibold text-paw-text-primary">{server?.name ?? "Server"}</h2>
             <button
               type="button"
               onClick={onInvite}
-              className="rounded-md border border-white/14 bg-black/25 px-2.5 py-1 text-xs font-semibold text-paw-text-secondary transition hover:border-white/22 hover:bg-black/35 hover:text-paw-text-primary"
+              className="rounded-md border border-white/10 bg-[#1f2125] px-2 py-1 text-[11px] font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             >
               {t("server.invite_button")}
             </button>
@@ -228,7 +237,7 @@ export const ChannelList = ({
                 title={t("server.settings_button")}
                 aria-label={t("server.settings_button")}
                 onClick={onOpenServerSettings}
-                className="grid h-7 w-7 place-items-center rounded-md border border-white/14 bg-black/25 text-paw-text-secondary transition hover:border-white/22 hover:bg-black/35 hover:text-paw-text-primary"
+                className="grid h-7 w-7 place-items-center rounded-md border border-white/10 bg-[#1f2125] text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
                   <path
@@ -249,14 +258,14 @@ export const ChannelList = ({
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 py-3" onClick={() => setContext((value) => ({ ...value, visible: false }))}>
         <div>
           <div className="flex items-center justify-between px-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-paw-text-muted">{t("channels.text_channels")}</p>
+            <p className={sectionHeadingClass}>{t("channels.text_channels")}</p>
             <button
               type="button"
               title={t("channels.create_text_channel")}
               aria-label={t("channels.create_text_channel")}
               disabled={isCreatingChannel}
               onClick={onCreateTextChannel}
-              className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition hover:bg-white/10 hover:text-paw-text-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              className={iconActionButtonClass}
             >
               +
             </button>
@@ -273,10 +282,10 @@ export const ChannelList = ({
                     setContext({ visible: true, x: event.clientX, y: event.clientY, channelId: channel.id });
                   }}
                   onClick={() => setActiveChannel(channel.id)}
-                  className={`group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[15px] transition-all duration-150 ${
+                  className={`${channelRowBaseClass} ${
                     active
-                      ? "bg-paw-bg-elevated text-paw-text-primary shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                      : "text-paw-text-muted hover:bg-paw-bg-elevated/70 hover:text-paw-text-secondary hover:translate-x-[1px]"
+                      ? "bg-[#404249] text-paw-text-primary"
+                      : "text-paw-text-muted hover:bg-[#35373c] hover:text-paw-text-secondary"
                   }`}
                 >
                   <span className="text-paw-text-muted">
@@ -291,14 +300,14 @@ export const ChannelList = ({
 
         <div>
           <div className="flex items-center justify-between px-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-paw-text-muted">{t("channels.voice_channels")}</p>
+            <p className={sectionHeadingClass}>{t("channels.voice_channels")}</p>
             <button
               type="button"
               title={t("channels.create_voice_channel")}
               aria-label={t("channels.create_voice_channel")}
               disabled={isCreatingChannel}
               onClick={onCreateVoiceChannel}
-              className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition hover:bg-white/10 hover:text-paw-text-secondary disabled:cursor-not-allowed disabled:opacity-50"
+              className={iconActionButtonClass}
             >
               +
             </button>
@@ -310,18 +319,18 @@ export const ChannelList = ({
         </div>
       </div>
 
-      <footer className="border-t border-white/10 bg-black/20 px-2 py-2">
+      <footer className="border-t border-black/35 bg-[#232428] px-2 py-2">
         {connectedVoiceChannelId ? (
-          <div className="mb-2 rounded-lg border border-[#3ba55d]/35 bg-[#1a2b22] px-2 py-2">
+          <div className="mb-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-xs font-semibold text-[#9cf5ba]">{t("voice.connected")}</p>
+              <p className="truncate text-[12px] font-semibold leading-4 text-[#8ee6a8]">{t("voice.connected")}</p>
               <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-3 tracking-wide ${
                   gatewayStatus === "connected"
-                    ? "border-[#3ba55d]/35 bg-[#3ba55d]/20 text-[#9cf5ba]"
+                    ? "border-[#248046]/35 bg-[#248046]/25 text-[#8ee6a8]"
                     : gatewayStatus === "reconnecting" || gatewayStatus === "connecting"
                       ? "border-[#f4b942]/35 bg-[#f4b942]/20 text-[#ffd890]"
-                      : "border-white/15 bg-black/20 text-paw-text-muted"
+                      : "border-white/15 bg-[#1e1f22] text-paw-text-muted"
                 }`}
               >
                 {gatewayStatusLabel}
@@ -333,12 +342,12 @@ export const ChannelList = ({
             </p>
             <div className="mt-2 flex items-center justify-between gap-2">
               <p className="text-[11px] text-paw-text-muted">
-                Ping: {gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)} ms` : "—"}
+                Ping: {gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)} ms` : "-"}
               </p>
               <button
                 type="button"
                 onClick={onLeaveVoice}
-                className="rounded-md border border-white/15 bg-black/30 px-2 py-0.5 text-[11px] font-semibold text-paw-text-secondary transition hover:bg-black/45 hover:text-paw-text-primary"
+                className="rounded-md border border-white/15 bg-[#1e1f22] px-2 py-0.5 text-[11px] font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
               >
                 {t("voice.leave")}
               </button>
@@ -346,7 +355,7 @@ export const ChannelList = ({
           </div>
         ) : null}
 
-        <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-2">
+        <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#1e1f22] px-2 py-2">
           <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-paw-text-secondary">{effectiveUser?.username ?? "guest"}</p>

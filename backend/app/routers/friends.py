@@ -14,6 +14,7 @@ from app.schemas.channel import ChannelRead
 from app.schemas.friend import FriendRead, FriendRequestCreate, FriendRequestUpdate
 from app.services.channel_access_service import get_or_create_dm_channel
 from app.services.media_service import MediaService
+from app.services.presence_service import PresenceSnapshot, get_presence_map, was_recently_online
 
 router = APIRouter(prefix="/friends", tags=["friends"])
 
@@ -34,9 +35,17 @@ async def _load_user_profiles(session: AsyncSession, relations: list[Friend]) ->
     }
 
 
-def _serialize_relation(relation: Friend, profiles: dict[UUID, dict[str, str | None]]) -> FriendRead:
+def _serialize_relation(
+    relation: Friend,
+    profiles: dict[UUID, dict[str, str | None]],
+    *,
+    current_user_id: UUID,
+    presence_by_user: dict[str, PresenceSnapshot],
+) -> FriendRead:
     requester = profiles.get(relation.requester_id, {})
     addressee = profiles.get(relation.addressee_id, {})
+    peer_id = relation.addressee_id if relation.requester_id == current_user_id else relation.requester_id
+    peer_presence = presence_by_user.get(str(peer_id), PresenceSnapshot(is_online=False, last_seen_at=None))
     return FriendRead(
         requester_id=relation.requester_id,
         addressee_id=relation.addressee_id,
@@ -44,6 +53,9 @@ def _serialize_relation(relation: Friend, profiles: dict[UUID, dict[str, str | N
         addressee_username=addressee.get("username") if isinstance(addressee, dict) else None,
         requester_avatar_url=requester.get("avatar_url") if isinstance(requester, dict) else None,
         addressee_avatar_url=addressee.get("avatar_url") if isinstance(addressee, dict) else None,
+        peer_is_online=peer_presence.is_online,
+        peer_was_recently_online=was_recently_online(peer_presence),
+        peer_last_seen_at=peer_presence.last_seen_at,
         status=relation.status,
         created_at=relation.created_at,
     )
@@ -56,7 +68,15 @@ async def list_friends(session: AsyncSession = Depends(get_session), current_use
     )
     rows = (await session.execute(stmt)).scalars().all()
     profiles = await _load_user_profiles(session, rows)
-    return [_serialize_relation(item, profiles) for item in rows]
+    presence_by_user = await get_presence_map(
+        str(user_id)
+        for relation in rows
+        for user_id in (relation.requester_id, relation.addressee_id)
+    )
+    return [
+        _serialize_relation(item, profiles, current_user_id=current_user.id, presence_by_user=presence_by_user)
+        for item in rows
+    ]
 
 
 @router.post("", response_model=FriendRead, status_code=status.HTTP_201_CREATED)
@@ -86,7 +106,8 @@ async def send_friend_request(
     await session.commit()
     await session.refresh(relation)
     profiles = await _load_user_profiles(session, [relation])
-    return _serialize_relation(relation, profiles)
+    presence_by_user = await get_presence_map((str(relation.requester_id), str(relation.addressee_id)))
+    return _serialize_relation(relation, profiles, current_user_id=current_user.id, presence_by_user=presence_by_user)
 
 
 @router.patch("/{requester_id}", response_model=FriendRead)
@@ -104,7 +125,8 @@ async def update_friend_request(
     await session.commit()
     await session.refresh(relation)
     profiles = await _load_user_profiles(session, [relation])
-    return _serialize_relation(relation, profiles)
+    presence_by_user = await get_presence_map((str(relation.requester_id), str(relation.addressee_id)))
+    return _serialize_relation(relation, profiles, current_user_id=current_user.id, presence_by_user=presence_by_user)
 
 
 @router.post("/{friend_id}/dm", response_model=ChannelRead)

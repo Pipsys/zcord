@@ -18,8 +18,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ["Sora", "sans-serif"],
-        body: ["DM Sans", "sans-serif"],
+        display: ["Inter", "sans-serif"],
+        body: ["Inter", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
       },
       borderRadius: {

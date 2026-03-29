@@ -585,7 +585,7 @@ const ServerPage = () => {
       />
 
       <section className="flex min-w-0 flex-1 flex-col bg-paw-bg-primary">
-        <header className="flex h-14 items-center justify-between border-b border-white/10 bg-[#0f131b]/95 px-4">
+        <header className="flex h-12 items-center justify-between border-b border-black/35 bg-paw-bg-secondary px-4">
           <div className="min-w-0 flex items-center gap-3">
             <Avatar src={currentServer?.icon_url ?? null} label={currentServer?.name ?? "server"} size="sm" />
             <div className="min-w-0">
@@ -601,8 +601,8 @@ const ServerPage = () => {
             <span
               className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
                 activeChannel?.type === "voice"
-                  ? "border-[#3ba55d]/45 bg-[#3ba55d]/15 text-[#9cf5ba]"
-                  : "border-white/10 bg-black/25 text-paw-text-muted"
+                  ? "border-[#248046]/45 bg-[#248046]/20 text-[#8ee6a8]"
+                  : "border-white/10 bg-[#1e1f22] text-paw-text-muted"
               }`}
             >
               {activeChannel?.type === "voice" ? "Voice" : "Text"}

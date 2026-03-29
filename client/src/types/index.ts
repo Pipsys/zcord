@@ -35,6 +35,9 @@ export interface ServerMember {
   nickname: string | null;
   avatar_url: string | null;
   status: UserStatus;
+  is_online: boolean;
+  was_recently_online: boolean;
+  last_seen_at: string | null;
   joined_at: string;
 }
 
@@ -89,6 +92,9 @@ export interface FriendRelation {
   addressee_username?: string | null;
   requester_avatar_url?: string | null;
   addressee_avatar_url?: string | null;
+  peer_is_online: boolean;
+  peer_was_recently_online: boolean;
+  peer_last_seen_at: string | null;
   status: FriendStatus;
   created_at: string;
 }

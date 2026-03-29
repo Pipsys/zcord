@@ -24,7 +24,7 @@ export const useServerMembersQuery = (serverId: string | null) =>
     queryKey: ["server-members", serverId],
     queryFn: () => get<ServerMember[]>(`/servers/${serverId}/members`),
     enabled: serverId !== null,
-    refetchInterval: 10_000,
+    refetchInterval: 5_000,
   });
 
 export const useDirectChannelsQuery = () =>
@@ -44,6 +44,7 @@ export const useFriendsQuery = () =>
   useQuery({
     queryKey: ["friends"],
     queryFn: () => get<FriendRelation[]>("/friends"),
+    refetchInterval: 5_000,
   });
 
 export const useCreateServerMutation = () => {

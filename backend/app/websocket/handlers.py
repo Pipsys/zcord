@@ -170,6 +170,8 @@ def _coerce_bool(value: Any) -> bool | None:
 
 
 async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[str, Any]) -> None:
+    await manager.refresh_presence(user_id)
+
     if not rate_limiter.allow(websocket):
         await websocket.send_json(
             {

@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     default_rate_limit: str = "30/second"
     websocket_event_limit_per_second: int = 100
 
-    presence_ttl_seconds: int = 5
+    presence_ttl_seconds: int = 45
+    presence_recently_seconds: int = 900
+    presence_last_seen_ttl_seconds: int = 2_592_000
     member_cache_ttl_seconds: int = 30
 
     @field_validator("allowed_origins", mode="before")

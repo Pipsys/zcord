@@ -22,8 +22,8 @@ const WindowControlButton = ({ title, onClick, children, danger = false }: Windo
     title={title}
     onClick={onClick}
     className={clsx(
-      "grid h-7 w-8 place-items-center rounded-md border border-transparent text-paw-text-muted transition-colors",
-      danger ? "hover:bg-[#da373c] hover:text-white" : "hover:bg-white/10 hover:text-paw-text-secondary",
+      "grid h-7 w-8 place-items-center rounded-md border border-transparent text-paw-text-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35",
+      danger ? "hover:bg-[#da373c] hover:text-white active:bg-[#c5353a]" : "hover:bg-white/10 hover:text-paw-text-secondary active:bg-white/15",
     )}
   >
     {children}
@@ -70,25 +70,23 @@ export const TitleBar = () => {
   return (
     <header
       className={clsx(
-        "drag-region relative flex items-center justify-between border-b border-white/10",
-        isMac ? "h-12 bg-[#12171dcc]/90 px-4 backdrop-blur-xl" : "h-10 bg-black/20 px-3",
+        "drag-region relative flex items-center justify-between border-b border-black/35",
+        isMac ? "h-12 bg-paw-bg-secondary px-4" : "h-10 bg-paw-bg-secondary px-3",
       )}
     >
-      {isMac ? <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" /> : null}
-
       <div className={clsx("min-w-0 flex items-center", isMac ? "gap-3 pl-[76px]" : "gap-2")}>
         <img src={zcordLogo} alt="zcord" className="h-4 w-4 rounded object-contain" />
-        <span className={clsx("font-semibold uppercase text-paw-text-muted", isMac ? "text-[11px] tracking-[0.18em]" : "text-xs tracking-[0.08em]")}>zcord</span>
+        <span className={clsx("font-semibold uppercase leading-4 text-paw-text-muted", isMac ? "text-[12px] tracking-[0.14em]" : "text-[12px] tracking-[0.08em]")}>zcord</span>
         <span className="text-xs text-paw-text-muted">/</span>
-        <span className={clsx("truncate font-semibold text-paw-text-secondary", isMac ? "text-[13px]" : "text-sm")}>{sectionTitle}</span>
+        <span className={clsx("truncate font-semibold leading-5 text-paw-text-secondary", isMac ? "text-[14px]" : "text-[15px]")}>{sectionTitle}</span>
       </div>
 
       <div className={clsx("no-drag-region flex items-center", isMac ? "gap-2" : "gap-1")}>
         {voiceRoom.connectedChannelId ? (
-          <div className="hidden max-w-[260px] items-center gap-2 rounded-md border border-[#3ba55d]/35 bg-[#1c2b22] px-2.5 py-1 sm:flex">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#43b581]" />
-            <span className="truncate text-xs font-semibold text-[#9cf5ba]">{connectedVoiceChannel?.name ? `#${connectedVoiceChannel.name}` : t("voice.connected")}</span>
-            <span className="text-[11px] text-paw-text-muted">
+          <div className="hidden max-w-[260px] items-center gap-2 rounded-md border border-[#248046]/35 bg-[#1a2d1f] px-2.5 py-1 sm:flex">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#23a55a]" />
+            <span className="truncate text-[12px] font-semibold leading-4 text-[#8ee6a8]">{connectedVoiceChannel?.name ? `#${connectedVoiceChannel.name}` : t("voice.connected")}</span>
+            <span className="text-[11px] leading-4 text-paw-text-muted">
               {gatewayStatus === "connected" && gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)}ms` : gatewayStatus}
             </span>
           </div>

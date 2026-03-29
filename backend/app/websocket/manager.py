@@ -9,11 +9,8 @@ from uuid import uuid4
 from fastapi import WebSocket
 from redis.exceptions import RedisError
 
-from app.config import get_settings
 from app.redis_client import redis_client
-
-settings = get_settings()
-
+from app.services.presence_service import mark_offline, mark_online
 
 class ConnectionManager:
     def __init__(self) -> None:
@@ -66,10 +63,7 @@ class ConnectionManager:
         await websocket.accept()
         self._connections[user_id].add(websocket)
         self._socket_users[websocket] = user_id
-        try:
-            await redis_client.setex(f"presence:{user_id}", settings.presence_ttl_seconds, "online")
-        except RedisError:
-            pass
+        await self.refresh_presence(user_id)
 
     async def disconnect(self, user_id: str, websocket: WebSocket) -> dict[str, Any] | None:
         left_member = self._leave_voice_membership(websocket, user_id)
@@ -83,12 +77,12 @@ class ConnectionManager:
 
         if not self._connections[user_id]:
             self._connections.pop(user_id, None)
-            try:
-                await redis_client.delete(f"presence:{user_id}")
-            except RedisError:
-                pass
+            await mark_offline(user_id)
 
         return left_member
+
+    async def refresh_presence(self, user_id: str) -> None:
+        await mark_online(user_id)
 
     async def subscribe_server(self, server_id: str, websocket: WebSocket) -> None:
         self._server_subscriptions[server_id].add(websocket)

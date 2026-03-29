@@ -24,5 +24,8 @@ class FriendRead(StrictSchema):
     addressee_username: str | None = None
     requester_avatar_url: str | None = None
     addressee_avatar_url: str | None = None
+    peer_is_online: bool = False
+    peer_was_recently_online: bool = False
+    peer_last_seen_at: datetime | None = None
     status: FriendStatus
     created_at: datetime

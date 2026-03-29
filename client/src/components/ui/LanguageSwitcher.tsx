@@ -13,7 +13,7 @@ export const LanguageSwitcher = ({ compact = false }: LanguageSwitcherProps) => 
   const { locale, setLocale, t } = useI18n();
 
   return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-black/25 p-1 backdrop-blur-md">
+    <div className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-[#1f2125] p-1">
       {!compact ? <span className="px-2 text-xs text-paw-text-muted">{t("common.language")}</span> : null}
       {options.map((option) => (
         <button
@@ -21,8 +21,8 @@ export const LanguageSwitcher = ({ compact = false }: LanguageSwitcherProps) => 
           type="button"
           onClick={() => setLocale(option)}
           className={clsx(
-            "rounded px-2 py-1 text-xs font-medium transition",
-            locale === option ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-white/5 hover:text-paw-text-secondary",
+            "rounded px-2.5 py-1 text-[12px] font-semibold leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35",
+            locale === option ? "bg-[#404249] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#2b2d31] hover:text-paw-text-secondary",
           )}
         >
           {option.toUpperCase()}

@@ -145,28 +145,36 @@ export const MessageInput = ({
   };
 
   return (
-    <div className="border-t border-white/10 bg-transparent px-3 pb-3 pt-2">
+    <div className="border-t border-black/35 bg-paw-bg-secondary px-3 pb-3 pt-2">
       {editingMessage ? (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-white/[0.05] px-3 py-2">
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-[#2b2d31] px-3 py-2">
           <div className="min-w-0">
             <p className="text-xs font-semibold text-paw-text-secondary">{t("message.editing_label")}</p>
             <p className="truncate text-xs text-paw-text-muted">{editingMessage.preview}</p>
           </div>
-          <button type="button" className="rounded-md bg-white/10 px-2 py-1 text-xs text-paw-text-secondary hover:bg-white/15" onClick={onCancelEdit}>
+          <button
+            type="button"
+            className="rounded-md bg-[#404249] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#4a4d55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+            onClick={onCancelEdit}
+          >
             {t("message.cancel")}
           </button>
         </div>
       ) : null}
 
       {!editingMessage && replyingTo ? (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-white/[0.05] px-3 py-2">
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-[#2b2d31] px-3 py-2">
           <div className="min-w-0">
             <p className="text-xs font-semibold text-paw-text-secondary">
               {t("message.replying_to")} {replyingTo.author}
             </p>
             <p className="truncate text-xs text-paw-text-muted">{replyingTo.preview}</p>
           </div>
-          <button type="button" className="rounded-md bg-white/10 px-2 py-1 text-xs text-paw-text-secondary hover:bg-white/15" onClick={onCancelReply}>
+          <button
+            type="button"
+            className="rounded-md bg-[#404249] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#4a4d55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+            onClick={onCancelReply}
+          >
             {t("message.cancel")}
           </button>
         </div>
@@ -180,7 +188,7 @@ export const MessageInput = ({
             const progress = upload?.progress ?? 0;
             const statusLabel = upload ? uploadStatusLabels[upload.status] : null;
             return (
-              <div key={`${key}-${index}`} className="rounded-md border border-white/10 bg-black/20 px-2.5 py-2">
+              <div key={`${key}-${index}`} className="rounded-md border border-white/10 bg-[#1e1f22] px-2.5 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium text-paw-text-secondary">{file.name}</p>
@@ -191,7 +199,7 @@ export const MessageInput = ({
                     <button
                       type="button"
                       disabled={isSubmitting}
-                      className="text-paw-text-muted transition hover:text-paw-text-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded text-paw-text-muted transition-colors hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={() => setFiles((current) => current.filter((item) => toFileKey(item) !== key))}
                     >
                       x
@@ -213,7 +221,7 @@ export const MessageInput = ({
 
       <div
         className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 transition-colors ${
-          isDragging ? "border-paw-accent/50 bg-white/[0.02]" : "border-white/10 bg-transparent"
+          isDragging ? "border-paw-accent/50 bg-[#2b2d31]" : "border-white/10 bg-[#1e1f22]"
         }`}
         onDragOver={(event) => {
           event.preventDefault();
@@ -246,7 +254,7 @@ export const MessageInput = ({
         />
 
         <button
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/20 text-lg leading-none text-paw-text-muted hover:text-paw-text-secondary"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#2b2d31] text-lg leading-none text-paw-text-muted transition-colors hover:bg-[#35373c] hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
           type="button"
           title={t("message.input_attach")}
           onClick={() => fileInputRef.current?.click()}
@@ -270,7 +278,7 @@ export const MessageInput = ({
             }
           }}
           placeholder={editingMessage ? t("message.editing_placeholder") : t("message.input_placeholder", { channel: channelName })}
-          className="h-9 min-w-0 flex-1 bg-transparent px-1 text-[15px] text-paw-text-secondary placeholder:text-paw-text-muted focus:outline-none"
+          className="h-9 min-w-0 flex-1 bg-transparent px-1 text-[15px] leading-5 text-paw-text-secondary placeholder:text-paw-text-muted focus:outline-none"
         />
 
         <EmojiPicker

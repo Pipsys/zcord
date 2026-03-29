@@ -82,7 +82,7 @@ export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, 
 
   if (indexedMessages.length === 0) {
     return (
-      <div className="grid h-full place-items-center px-6 text-center">
+      <div className="grid h-full place-items-center bg-paw-bg-primary px-6 text-center">
         <div>
           <p className="text-lg font-semibold text-paw-text-secondary">{t("message.empty_title")}</p>
           <p className="mt-2 text-sm text-paw-text-muted">{t("server.empty_chat_subtitle", { channel: channelName })}</p>

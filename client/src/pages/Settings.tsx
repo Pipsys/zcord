@@ -56,12 +56,12 @@ const SettingsPage = () => {
   return (
     <main className="h-full overflow-auto bg-paw-bg-primary p-6">
       <div className="mx-auto max-w-3xl space-y-6">
-        <section className="rounded-xl border border-white/10 bg-black/20 p-5">
+        <section className="rounded-xl border border-white/10 bg-paw-bg-secondary p-5">
           <h1 className="font-display text-2xl">{t("settings.title")}</h1>
           <p className="text-sm text-paw-text-secondary">{t("settings.description")}</p>
         </section>
 
-        <section className="rounded-xl border border-white/10 bg-black/20 p-5">
+        <section className="rounded-xl border border-white/10 bg-paw-bg-secondary p-5">
           <h2 className="mb-3 font-display text-lg">{t("settings.profile")}</h2>
           <div className="flex flex-col gap-4 md:flex-row md:items-center">
             <div className="flex items-center gap-3">
@@ -91,21 +91,26 @@ const SettingsPage = () => {
           </div>
         </section>
 
-        <section className="rounded-xl border border-white/10 bg-black/20 p-5">
+        <section className="rounded-xl border border-white/10 bg-paw-bg-secondary p-5">
           <h2 className="mb-3 font-display text-lg">{t("settings.notifications")}</h2>
           <label className="flex items-center gap-2 text-sm text-paw-text-secondary">
-            <input type="checkbox" checked={notifications} onChange={(event) => setNotifications(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={notifications}
+              onChange={(event) => setNotifications(event.target.checked)}
+              className="h-4 w-4 rounded border-white/20 bg-[#1e1f22] accent-paw-accent"
+            />
             {t("settings.notifications_toggle")}
           </label>
         </section>
 
-        <section className="rounded-xl border border-white/10 bg-black/20 p-5">
+        <section className="rounded-xl border border-white/10 bg-paw-bg-secondary p-5">
           <h2 className="mb-3 font-display text-lg">{t("settings.voice_keybinds")}</h2>
           <label className="text-sm text-paw-text-secondary">{t("settings.push_to_talk")}</label>
           <input
             value={pushToTalkKey}
             onChange={(event) => setPushToTalkKey(event.target.value)}
-            className="mt-1 block rounded-md border border-white/10 bg-black/30 px-3 py-2 outline-none transition focus:border-paw-accent"
+            className="mt-1 block rounded-md border border-white/10 bg-[#1e1f22] px-3 py-2 text-[14px] leading-5 outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
           />
         </section>
 

@@ -391,15 +391,15 @@ export const VoiceChannel = ({
   }, []);
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0b0d13]">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-paw-bg-primary">
       <div className="min-h-0 flex-1 p-3">
         {!connected ? (
-          <div className="grid h-full place-items-center rounded-xl border border-white/10 bg-[#0f1218]">
+          <div className="grid h-full place-items-center rounded-lg border border-white/10 bg-paw-bg-secondary">
             <div className="text-center">
               <p className="mb-2 text-sm text-paw-text-secondary">{t("server.voice_panel_hint")}</p>
               <button
                 disabled={!channelId}
-                className="rounded-md border border-white/10 bg-paw-accent px-3 py-2 text-sm font-semibold text-white shadow-[0_6px_18px_var(--color-accent-glow)] transition-colors hover:bg-paw-accentSecondary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-white/10 bg-paw-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-paw-accentSecondary disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={onConnect}
               >
                 {t("voice.connect")}
@@ -407,7 +407,7 @@ export const VoiceChannel = ({
             </div>
           </div>
         ) : participantTiles.length === 0 ? (
-          <div className="grid h-full place-items-center rounded-xl border border-white/10 bg-[#0f1218]">
+          <div className="grid h-full place-items-center rounded-lg border border-white/10 bg-paw-bg-secondary">
             <p className="text-sm text-paw-text-muted">{t("voice.no_participants")}</p>
           </div>
         ) : screenShareTiles.length > 0 ? (
@@ -422,7 +422,7 @@ export const VoiceChannel = ({
                 <article
                   key={participant.user_id}
                   className={clsx(
-                    "group relative min-h-[260px] overflow-hidden rounded-2xl border bg-[#0a0c10] md:min-h-[320px] xl:min-h-[360px]",
+                    "group relative min-h-[260px] overflow-hidden rounded-lg border bg-[#111214] md:min-h-[320px] xl:min-h-[360px]",
                     isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                   )}
                 >
@@ -462,11 +462,11 @@ export const VoiceChannel = ({
                   <article
                     key={participant.user_id}
                     className={clsx(
-                      "relative min-h-[160px] overflow-hidden rounded-2xl border bg-[#141821] transition-all duration-200",
+                      "relative min-h-[160px] overflow-hidden rounded-lg border bg-[#2b2d31] transition-all duration-200",
                       isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                     )}
                   >
-                    <div className="relative grid h-full w-full place-items-center bg-gradient-to-br from-[#1d2330] via-[#202532] to-[#181c27]">
+                    <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
                       <div className={clsx("rounded-full p-1.5", isSpeaking ? "ring-2 ring-[#43b581]" : "ring-1 ring-white/15")}>
                         <Avatar src={avatarSource} label={name} online={!participant.deafened} size="lg" />
                       </div>
@@ -483,7 +483,7 @@ export const VoiceChannel = ({
               <article
                 key={participant.user_id}
                 className={clsx(
-                  "group relative min-h-[180px] overflow-hidden rounded-2xl border bg-[#141821] transition-all duration-200",
+                  "group relative min-h-[180px] overflow-hidden rounded-lg border bg-[#2b2d31] transition-all duration-200",
                   isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                 )}
               >
@@ -498,7 +498,7 @@ export const VoiceChannel = ({
                     className="h-full w-full bg-black object-contain"
                   />
                 ) : (
-                  <div className="relative grid h-full w-full place-items-center bg-gradient-to-br from-[#1d2330] via-[#202532] to-[#181c27]">
+                  <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
                     <div className={clsx("rounded-full p-1.5", isSpeaking ? "ring-2 ring-[#43b581]" : "ring-1 ring-white/15")}>
                       <Avatar src={avatarSource} label={name} online={!participant.deafened} size="lg" />
                     </div>
@@ -529,7 +529,7 @@ export const VoiceChannel = ({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-white/10 bg-[#10131a] p-3">
+      <div className="shrink-0 border-t border-black/35 bg-paw-bg-secondary p-3">
         <VoiceControls
           muted={muted}
           deafened={deafened}

@@ -322,6 +322,15 @@ const HomePage = () => {
     accepted: t("home.request_status_accepted"),
     blocked: t("home.request_status_blocked"),
   };
+  const getPeerPresenceLabel = (relation: FriendRelation): string => {
+    if (relation.peer_is_online) {
+      return t("members.group_online");
+    }
+    if (relation.peer_was_recently_online) {
+      return t("members.group_recently");
+    }
+    return t("members.group_offline");
+  };
 
   const sortedFriends = useMemo(
     () => [...(friends ?? [])].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
@@ -329,6 +338,7 @@ const HomePage = () => {
   );
 
   const acceptedFriends = useMemo(() => sortedFriends.filter((item) => item.status === "accepted"), [sortedFriends]);
+  const onlineFriends = useMemo(() => acceptedFriends.filter((item) => item.peer_is_online), [acceptedFriends]);
   const pendingFriends = useMemo(() => sortedFriends.filter((item) => item.status === "pending"), [sortedFriends]);
   const incomingPendingFriends = useMemo(() => pendingFriends.filter((item) => item.addressee_id === currentUserId), [pendingFriends, currentUserId]);
   const outgoingPendingFriends = useMemo(() => pendingFriends.filter((item) => item.requester_id === currentUserId), [pendingFriends, currentUserId]);
@@ -336,7 +346,7 @@ const HomePage = () => {
 
   const filteredFriends = useMemo(() => {
     const value = search.trim().toLowerCase();
-    const source = tab === "online" ? acceptedFriends : sortedFriends;
+    const source = tab === "online" ? onlineFriends : sortedFriends;
     if (!value) {
       return source;
     }
@@ -345,7 +355,7 @@ const HomePage = () => {
       const peerName = formatPeerName(relation, currentUserId).toLowerCase();
       return peerId.includes(value) || peerName.includes(value);
     });
-  }, [acceptedFriends, currentUserId, search, sortedFriends, tab]);
+  }, [currentUserId, onlineFriends, search, sortedFriends, tab]);
 
   const handleCreateServer = async (event: FormEvent) => {
     event.preventDefault();
@@ -596,14 +606,14 @@ const HomePage = () => {
     <div className="flex h-full overflow-hidden bg-paw-bg-primary">
       <Sidebar />
 
-      <aside className="flex h-full w-80 flex-col border-r border-white/10 bg-black/20 p-2 backdrop-blur-sm">
+      <aside className="flex h-full w-80 flex-col border-r border-black/35 bg-paw-bg-secondary p-2">
         <div className="mb-2 space-y-1 px-1">
           <button
             type="button"
-            className={`flex h-9 w-full items-center gap-2 rounded-md border px-3 text-sm font-semibold transition ${
+            className={`flex h-9 w-full items-center gap-2 rounded-md border px-3 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
               selectedDm === null && tab !== "add"
-                ? "border-white/20 bg-white/[0.10] text-paw-text-primary"
-                : "border-white/10 bg-black/25 text-paw-text-secondary hover:border-white/20 hover:bg-white/[0.06]"
+                ? "border-white/20 bg-[#404249] text-paw-text-primary"
+                : "border-white/10 bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c]"
             }`}
             onClick={() => {
               setSelectedDm(null);
@@ -618,10 +628,10 @@ const HomePage = () => {
 
           <button
             type="button"
-            className={`flex h-9 w-full items-center gap-2 rounded-md border px-3 text-sm font-semibold transition ${
+            className={`flex h-9 w-full items-center gap-2 rounded-md border px-3 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
               selectedDm === null && tab === "add"
-                ? "border-white/20 bg-white/[0.10] text-paw-text-primary"
-                : "border-white/10 bg-black/25 text-paw-text-secondary hover:border-white/20 hover:bg-white/[0.06]"
+                ? "border-white/20 bg-[#404249] text-paw-text-primary"
+                : "border-white/10 bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c]"
             }`}
             onClick={() => {
               setSelectedDm(null);
@@ -658,10 +668,10 @@ const HomePage = () => {
             return (
               <button
                 key={`${relation.requester_id}:${relation.addressee_id}`}
-                className={`group relative w-full overflow-hidden rounded-lg border px-2.5 py-2 text-left transition ${
+                className={`group relative w-full overflow-hidden rounded-lg border px-2.5 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
                   active
-                    ? "border-white/30 bg-white/[0.08] text-paw-text-primary shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
-                    : "border-transparent text-paw-text-secondary hover:border-white/10 hover:bg-paw-bg-elevated/70"
+                    ? "border-white/20 bg-[#404249] text-paw-text-primary"
+                    : "border-transparent text-paw-text-secondary hover:bg-[#35373c]"
                 }`}
                 onClick={() => void handleOpenDirectMessage(peerId, peerName)}
               >
@@ -688,7 +698,7 @@ const HomePage = () => {
           })}
         </div>
 
-        <div className="mt-2 rounded-lg border border-white/10 bg-black/20 p-2">
+        <div className="mt-2 rounded-lg border border-white/10 bg-[#232428] p-2">
           <div className="flex items-center gap-2">
             <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
             <div className="min-w-0">
@@ -698,9 +708,9 @@ const HomePage = () => {
           </div>
           <div className="mt-2 flex gap-1">
             <Link to="/app/settings" className="flex-1">
-              <Button className="w-full bg-black/25 px-2 py-1 text-xs text-paw-text-secondary shadow-none hover:bg-black/35">{t("home.settings")}</Button>
+              <Button className="w-full bg-[#2b2d31] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary shadow-none hover:bg-[#35373c]">{t("home.settings")}</Button>
             </Link>
-            <Button className="flex-1 bg-[#da373c] px-2 py-1 text-xs shadow-none" onClick={() => void clearAuth()}>
+            <Button className="flex-1 bg-[#da373c] px-2 py-1 text-xs font-semibold leading-4 shadow-none hover:bg-[#e0484d]" onClick={() => void clearAuth()}>
               {t("home.logout")}
             </Button>
           </div>
@@ -709,7 +719,7 @@ const HomePage = () => {
 
       {selectedDm ? (
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-12 items-center border-b border-white/10 bg-black/20 px-4">
+          <header className="flex h-12 items-center border-b border-black/35 bg-paw-bg-secondary px-4">
             <div className="flex items-center gap-2">
               <span className="text-sm text-paw-text-muted">@</span>
               <h2 className="text-[16px] font-semibold text-paw-text-secondary">{selectedDm.peerName}</h2>
@@ -759,14 +769,29 @@ const HomePage = () => {
         </section>
       ) : (
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-12 items-center gap-2 border-b border-white/10 bg-black/20 px-4">
-            <button className={`rounded-md px-3 py-1 text-sm font-semibold ${tab === "online" ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/70"}`} onClick={() => setTab("online")}>
+          <header className="flex h-12 items-center gap-2 border-b border-black/35 bg-paw-bg-secondary px-4">
+            <button
+              className={`rounded-md px-3 py-1 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+                tab === "online" ? "bg-[#404249] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#35373c]"
+              }`}
+              onClick={() => setTab("online")}
+            >
               {t("home.tab_online")}
             </button>
-            <button className={`rounded-md px-3 py-1 text-sm font-semibold ${tab === "all" ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/70"}`} onClick={() => setTab("all")}>
+            <button
+              className={`rounded-md px-3 py-1 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+                tab === "all" ? "bg-[#404249] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#35373c]"
+              }`}
+              onClick={() => setTab("all")}
+            >
               {t("home.tab_all")}
             </button>
-            <button className={`rounded-md px-3 py-1 text-sm font-semibold ${tab === "add" ? "bg-paw-accent text-white" : "text-paw-text-muted hover:bg-paw-bg-elevated/70"}`} onClick={() => setTab("add")}>
+            <button
+              className={`rounded-md px-3 py-1 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+                tab === "add" ? "bg-paw-accent text-white" : "text-paw-text-muted hover:bg-[#35373c]"
+              }`}
+              onClick={() => setTab("add")}
+            >
               {t("home.tab_add_friend")}
             </button>
           </header>
@@ -785,7 +810,7 @@ const HomePage = () => {
                       value={friendId}
                       onChange={(event) => setFriendId(event.target.value)}
                       placeholder={t("home.friend_id_placeholder")}
-                      className="h-11 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+                    className="h-11 flex-1 rounded-xl border border-white/10 bg-[#1e1f22] px-4 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
                     />
                     <Button type="submit" className="min-w-[180px] justify-center" disabled={sendFriendRequest.isPending}>
                       {t("home.send_request")}
@@ -793,7 +818,7 @@ const HomePage = () => {
                   </form>
 
                   <div className="mt-6 grid gap-4 xl:grid-cols-2">
-                    <section className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <section className="rounded-xl border border-white/10 bg-[#232428] p-4">
                       <div className="mb-3">
                         <h4 className="text-sm font-semibold text-paw-text-secondary">{t("home.incoming_requests_title")}</h4>
                         <p className="mt-1 text-xs leading-5 text-paw-text-muted">{t("home.incoming_requests_description")}</p>
@@ -822,7 +847,7 @@ const HomePage = () => {
                       </div>
                     </section>
 
-                    <section className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <section className="rounded-xl border border-white/10 bg-[#232428] p-4">
                       <div className="mb-3">
                         <h4 className="text-sm font-semibold text-paw-text-secondary">{t("home.outgoing_requests_title")}</h4>
                         <p className="mt-1 text-xs leading-5 text-paw-text-muted">{t("home.outgoing_requests_description")}</p>
@@ -858,11 +883,11 @@ const HomePage = () => {
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder={t("home.search_friends_placeholder")}
-                    className="mb-4 h-10 w-full rounded-md border border-white/10 bg-black/20 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+                    className="mb-4 h-10 w-full rounded-md border border-white/10 bg-[#1e1f22] px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
                   />
 
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-paw-text-muted">
-                    {tab === "online" ? t("home.online_count", { count: acceptedFriends.length }) : t("home.all_count", { count: sortedFriends.length })}
+                    {tab === "online" ? t("home.online_count", { count: onlineFriends.length }) : t("home.all_count", { count: sortedFriends.length })}
                   </p>
 
                   {filteredFriends.length === 0 ? <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-paw-text-muted">{t("home.no_friends")}</p> : null}
@@ -878,7 +903,7 @@ const HomePage = () => {
                             <Avatar src={peerAvatar} label={peerName} size="sm" />
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-paw-text-secondary">{peerName}</p>
-                              <p className="truncate text-xs text-paw-text-muted">{statusLabels[relation.status]}</p>
+                              <p className="truncate text-xs text-paw-text-muted">{getPeerPresenceLabel(relation)}</p>
                             </div>
                           </div>
                           <p className="text-xs text-paw-text-muted">{new Date(relation.created_at).toLocaleDateString()}</p>
@@ -890,14 +915,14 @@ const HomePage = () => {
               )}
             </main>
 
-            <aside className="hidden w-80 border-l border-white/10 bg-black/10 p-4 xl:block">
+            <aside className="hidden w-80 border-l border-black/35 bg-paw-bg-secondary p-4 xl:block">
               <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <h4 className="mb-2 text-sm font-semibold text-paw-text-secondary">{t("home.tools_title")}</h4>
 
-                <div className="mb-4 rounded-lg border border-white/10 bg-black/20 p-2 text-xs">
+                <div className="mb-4 rounded-lg border border-white/10 bg-[#1e1f22] p-2 text-xs">
                   <p className="text-paw-text-muted">{t("home.my_id")}</p>
                   <p className="mt-1 truncate text-paw-text-secondary">{effectiveUser?.id ?? t("common.none")}</p>
-                  <Button className="mt-2 w-full bg-black/25 text-xs text-paw-text-secondary shadow-none hover:bg-black/35" onClick={() => void copyId()}>
+                  <Button className="mt-2 w-full bg-[#2b2d31] text-xs text-paw-text-secondary shadow-none hover:bg-[#35373c]" onClick={() => void copyId()}>
                     {t("home.copy_id")}
                   </Button>
                 </div>
@@ -908,7 +933,7 @@ const HomePage = () => {
                     value={serverName}
                     onChange={(event) => setServerName(event.target.value)}
                     placeholder={t("home.server_name_placeholder")}
-                    className="h-9 w-full rounded-md border border-white/10 bg-black/20 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+                    className="h-9 w-full rounded-md border border-white/10 bg-[#1e1f22] px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
                   />
                   <Button type="submit" className="w-full" disabled={createServer.isPending || createChannel.isPending}>
                     {t("home.create_server_button")}
@@ -921,7 +946,7 @@ const HomePage = () => {
                     value={joinServerId}
                     onChange={(event) => setJoinServerId(event.target.value)}
                     placeholder={t("home.friend_id_placeholder")}
-                    className="h-9 w-full rounded-md border border-white/10 bg-black/20 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+                    className="h-9 w-full rounded-md border border-white/10 bg-[#1e1f22] px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
                   />
                   <Button type="submit" className="w-full" disabled={joinServer.isPending}>
                     {t("home.join_server_button")}

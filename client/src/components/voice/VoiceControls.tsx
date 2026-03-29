@@ -44,16 +44,16 @@ export const VoiceControls = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const buttonBaseClass =
-    "grid h-10 w-10 place-items-center rounded-full border border-white/10 text-white transition-colors";
+    "grid h-10 w-10 place-items-center rounded-full border border-white/10 text-paw-text-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mx-auto flex w-fit items-center gap-2 rounded-2xl border border-white/10 bg-[#171b24] px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+      <div className="mx-auto flex w-fit items-center gap-2 rounded-xl border border-white/10 bg-paw-bg-secondary px-3 py-2">
         <button
           onClick={onToggleMute}
           disabled={!connected}
           title={muted ? t("voice.unmute") : t("voice.mute")}
-          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#212633] text-white/40" : muted ? "bg-[#da373c] hover:bg-[#ef4444]" : "bg-[#2b3243] hover:bg-[#323b50]"}`}
+          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#2b2d31] text-white/40" : muted ? "bg-[#da373c] text-white hover:bg-[#ef4444] active:bg-[#cf3f44]" : "bg-[#3b3f46] hover:bg-[#4a4d55]"}`}
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
             <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
@@ -69,7 +69,7 @@ export const VoiceControls = ({
           onClick={onToggleDeafen}
           disabled={!connected}
           title={deafened ? t("voice.undeafen") : t("voice.deafen")}
-          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#212633] text-white/40" : deafened ? "bg-[#da373c] hover:bg-[#ef4444]" : "bg-[#2b3243] hover:bg-[#323b50]"}`}
+          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#2b2d31] text-white/40" : deafened ? "bg-[#da373c] text-white hover:bg-[#ef4444] active:bg-[#cf3f44]" : "bg-[#3b3f46] hover:bg-[#4a4d55]"}`}
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
             <path d="M4 14h4l5 4V6L8 10H4z" />
@@ -85,10 +85,10 @@ export const VoiceControls = ({
           title={screenSharing ? t("voice.stop_screen_share") : t("voice.screen_share")}
           className={`${buttonBaseClass} ${
             !connected
-              ? "cursor-not-allowed bg-[#212633] text-white/40"
+              ? "cursor-not-allowed bg-[#2b2d31] text-white/40"
               : screenSharing
-                ? "bg-[#3ba55d] hover:bg-[#43b967]"
-                : "bg-[#2b3243] hover:bg-[#323b50]"
+                ? "bg-[#248046] text-white hover:bg-[#2a9351] active:bg-[#227f47]"
+                : "bg-[#3b3f46] hover:bg-[#4a4d55]"
           }`}
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
@@ -99,7 +99,7 @@ export const VoiceControls = ({
           </svg>
         </button>
 
-        <button disabled className={`${buttonBaseClass} cursor-not-allowed bg-[#212633] text-white/40`} title={t("voice.video")}>
+        <button disabled className={`${buttonBaseClass} cursor-not-allowed bg-[#2b2d31] text-white/40`} title={t("voice.video")}>
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
             <rect x="3" y="7" width="12" height="10" rx="2" />
             <path d="M15 11l6-3v8l-6-3z" />
@@ -109,7 +109,7 @@ export const VoiceControls = ({
         <button
           onClick={() => setShowAdvanced((value) => !value)}
           disabled={!connected}
-          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#212633] text-white/40" : "bg-[#2b3243] hover:bg-[#323b50]"}`}
+          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#2b2d31] text-white/40" : "bg-[#3b3f46] hover:bg-[#4a4d55]"}`}
           title="Devices"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
@@ -119,7 +119,7 @@ export const VoiceControls = ({
         </button>
 
         {connected ? (
-          <button onClick={onLeave} className={`${buttonBaseClass} border-red-400/40 bg-[#da373c] hover:bg-[#ef4444]`} title={t("voice.leave")}>
+          <button onClick={onLeave} className={`${buttonBaseClass} border-red-400/40 bg-[#da373c] text-white hover:bg-[#ef4444] active:bg-[#cf3f44]`} title={t("voice.leave")}>
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
               <path d="M5 16c1.5-2 4-3 7-3s5.5 1 7 3" />
               <path d="M9 14l-2 2" />
@@ -130,13 +130,13 @@ export const VoiceControls = ({
       </div>
 
       {connected && showAdvanced ? (
-        <div className="mx-auto mt-2 flex max-w-4xl flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-[#171b24] p-3">
+        <div className="mx-auto mt-2 flex max-w-4xl flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-paw-bg-secondary p-3">
           <label className="flex items-center gap-2 text-xs text-paw-text-muted">
             {t("voice.input_device")}
             <select
               value={selectedInputDeviceId}
               onChange={(event) => onInputDeviceChange(event.target.value)}
-              className="min-w-[220px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs text-paw-text-secondary focus:border-paw-accent focus:outline-none"
+              className="min-w-[220px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
             >
               {inputDevices.map((device: VoiceInputDevice, index: number) => (
                 <option key={`${device.deviceId}-${index}`} value={device.deviceId}>
@@ -151,7 +151,7 @@ export const VoiceControls = ({
             <select
               value={selectedScreenSourceId}
               onChange={(event) => onScreenSourceChange(event.target.value)}
-              className="max-w-[300px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs text-paw-text-secondary focus:border-paw-accent focus:outline-none"
+              className="max-w-[300px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
               disabled={!connected}
             >
               <option value="__auto__">{t("voice.screen_source_auto")}</option>
@@ -166,7 +166,7 @@ export const VoiceControls = ({
 
           <button
             onClick={onRefreshScreenSources}
-            className="rounded-md border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs font-semibold text-paw-text-secondary hover:text-paw-text-primary"
+            className="rounded-md border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-black/35 hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             disabled={!connected}
           >
             {t("voice.refresh_sources")}

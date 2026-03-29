@@ -15,6 +15,7 @@ from app.routers.deps import get_current_user
 from app.schemas.server import ServerCreate, ServerMemberRead, ServerRead, ServerUpdate
 from app.services.media_service import MediaService
 from app.services.permission_service import Permission
+from app.services.presence_service import PresenceSnapshot, get_presence_map, was_recently_online
 
 router = APIRouter(prefix="/servers", tags=["servers"])
 
@@ -137,20 +138,27 @@ async def list_server_members(
         )
     ).all()
 
+    presence_by_user = await get_presence_map(str(user.id) for _, user in rows)
     media_service = MediaService(session)
-    return [
-        ServerMemberRead.model_validate(
-            {
-                "user_id": user.id,
-                "username": user.username,
-                "nickname": member.nickname,
-                "avatar_url": media_service.resolve_public_url(user.avatar_url),
-                "status": user.status,
-                "joined_at": member.joined_at,
-            }
+    members: list[ServerMemberRead] = []
+    for member, user in rows:
+        presence_snapshot = presence_by_user.get(str(user.id), PresenceSnapshot(is_online=False, last_seen_at=None))
+        members.append(
+            ServerMemberRead.model_validate(
+                {
+                    "user_id": user.id,
+                    "username": user.username,
+                    "nickname": member.nickname,
+                    "avatar_url": media_service.resolve_public_url(user.avatar_url),
+                    "status": user.status,
+                    "is_online": presence_snapshot.is_online,
+                    "was_recently_online": was_recently_online(presence_snapshot),
+                    "last_seen_at": presence_snapshot.last_seen_at,
+                    "joined_at": member.joined_at,
+                }
+            )
         )
-        for member, user in rows
-    ]
+    return members
 
 
 @router.post("/{server_id}/icon", response_model=ServerRead)

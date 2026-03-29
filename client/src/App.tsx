@@ -84,10 +84,10 @@ const App = () => {
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
+            initial={{ opacity: 0, y: 6, scale: 0.997, filter: "blur(1px)" }}
+            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: -4, scale: 1.003, filter: "blur(1px)" }}
+            transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
             className="h-full"
           >
             <Routes>
@@ -154,10 +154,8 @@ const App = () => {
                   type="button"
                   aria-label="Close toast"
                   onClick={() => removeToast(toast.id)}
-                  className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition hover:bg-white/10 hover:text-paw-text-secondary"
-                >
-                  ×
-                </button>
+                  className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition-colors hover:bg-white/10 hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+                >x</button>
               </div>
             </motion.div>
           ))}

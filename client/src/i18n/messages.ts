@@ -121,6 +121,7 @@ const ru = {
 
   "members.title": "Участники",
   "members.group_online": "В сети",
+  "members.group_recently": "Был недавно",
   "members.group_offline": "Не в сети",
   "members.none": "Нет участников для отображения",
 
@@ -394,6 +395,7 @@ const en: MessageCatalog = {
 
   "members.title": "Members",
   "members.group_online": "Online",
+  "members.group_recently": "Recently online",
   "members.group_offline": "Offline",
   "members.none": "No members to display",
 

@@ -76,21 +76,21 @@ const RegisterPage = () => {
   };
 
   return (
-    <main className="relative grid h-full place-items-center px-4">
+    <main className="relative grid h-full place-items-center bg-paw-bg-primary px-4">
       <div className="absolute right-6 top-6 z-10">
         <LanguageSwitcher />
       </div>
 
       <form
         onSubmit={submit}
-        className="relative z-10 w-full max-w-md rounded-2xl border border-white/15 bg-black/20 p-8 shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
+        className="relative z-10 w-full max-w-md rounded-xl border border-white/10 bg-paw-bg-secondary p-8 shadow-[0_18px_40px_rgba(0,0,0,0.32)]"
       >
-        <h1 className="mb-6 font-display text-4xl tracking-tight text-paw-text-primary">{t("auth.register_title")}</h1>
+        <h1 className="mb-6 font-display text-[30px] leading-9 tracking-tight text-paw-text-primary">{t("auth.register_title")}</h1>
 
         <label className="mb-3 block">
           <span className="mb-1.5 block text-sm font-medium text-paw-text-secondary">{t("auth.username")}</span>
           <input
-            className="h-11 w-full rounded-lg border border-white/12 bg-black/25 px-3 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/20"
+            className="h-11 w-full rounded-md border border-white/12 bg-[#1e1f22] px-3 text-[14px] leading-5 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             disabled={isSubmitting}
@@ -102,7 +102,7 @@ const RegisterPage = () => {
           <span className="mb-1.5 block text-sm font-medium text-paw-text-secondary">{t("auth.email")}</span>
           <input
             type="email"
-            className="h-11 w-full rounded-lg border border-white/12 bg-black/25 px-3 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/20"
+            className="h-11 w-full rounded-md border border-white/12 bg-[#1e1f22] px-3 text-[14px] leading-5 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             disabled={isSubmitting}
@@ -114,7 +114,7 @@ const RegisterPage = () => {
           <span className="mb-1.5 block text-sm font-medium text-paw-text-secondary">{t("auth.password")}</span>
           <input
             type="password"
-            className="h-11 w-full rounded-lg border border-white/12 bg-black/25 px-3 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/20"
+            className="h-11 w-full rounded-md border border-white/12 bg-[#1e1f22] px-3 text-[14px] leading-5 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             disabled={isSubmitting}
