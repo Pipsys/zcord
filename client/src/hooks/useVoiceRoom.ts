@@ -138,6 +138,11 @@ const voiceWarn = (message: string, payload?: unknown): void => {
   console.warn(`[voice] ${message} ${stringifyVoicePayload(payload)}`);
 };
 
+interface ScreenShareSenders {
+  video?: RTCRtpSender;
+  audio?: RTCRtpSender;
+}
+
 export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const connectedChannelId = useVoiceStore((state) => state.connectedChannelId);
@@ -145,6 +150,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const signalsByChannel = useVoiceStore((state) => state.signalsByChannel);
   const setConnectedChannel = useVoiceStore((state) => state.setConnectedChannel);
   const consumeSignals = useVoiceStore((state) => state.consumeSignals);
+  const removeParticipant = useVoiceStore((state) => state.removeParticipant);
   const clearChannel = useVoiceStore((state) => state.clearChannel);
 
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
@@ -163,9 +169,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const localStreamRef = useRef<MediaStream | null>(null);
   const localScreenStreamRef = useRef<MediaStream | null>(null);
   const localScreenTrackRef = useRef<MediaStreamTrack | null>(null);
+  const localScreenAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const peerMetaRef = useRef<Map<string, { channelId: string; serverId: string | null }>>(new Map());
-  const screenSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
+  const screenSendersRef = useRef<Map<string, ScreenShareSenders>>(new Map());
   const disconnectTimersRef = useRef<Map<string, number>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
@@ -558,6 +565,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     localScreenTrackRef.current = null;
+    localScreenAudioTrackRef.current = null;
     localScreenStreamRef.current = null;
     setScreenSharing(false);
     setLocalScreenStream(null);
@@ -639,22 +647,30 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
   const stopScreenShare = useCallback(async (): Promise<boolean> => {
     const hasScreenTrack = Boolean(localScreenTrackRef.current);
-    if (!hasScreenTrack && screenSendersRef.current.size === 0) {
+    const hasScreenAudioTrack = Boolean(localScreenAudioTrackRef.current);
+    if (!hasScreenTrack && !hasScreenAudioTrack && screenSendersRef.current.size === 0) {
       clearLocalScreenState(true);
       return false;
     }
 
     const renegotiateTargets: string[] = [];
     for (const [remoteUserId, peer] of peersRef.current.entries()) {
-      const sender = screenSendersRef.current.get(remoteUserId);
-      if (!sender) {
+      const senders = screenSendersRef.current.get(remoteUserId);
+      if (!senders) {
         continue;
       }
-      try {
-        peer.removeTrack(sender);
-      } catch {
-        // Ignore if sender is already detached.
+
+      for (const sender of [senders.video, senders.audio]) {
+        if (!sender) {
+          continue;
+        }
+        try {
+          peer.removeTrack(sender);
+        } catch {
+          // Ignore if sender is already detached.
+        }
       }
+
       screenSendersRef.current.delete(remoteUserId);
       renegotiateTargets.push(remoteUserId);
     }
@@ -735,10 +751,16 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         }
       }
       const screenTrack = localScreenTrackRef.current;
+      const screenAudioTrack = localScreenAudioTrackRef.current;
       const screenStream = localScreenStreamRef.current;
       if (screenTrack && screenStream) {
-        const sender = peer.addTrack(screenTrack, screenStream);
-        screenSendersRef.current.set(remoteUserId, sender);
+        const senders: ScreenShareSenders = {
+          video: peer.addTrack(screenTrack, screenStream),
+        };
+        if (screenAudioTrack && screenAudioTrack.readyState === "live") {
+          senders.audio = peer.addTrack(screenAudioTrack, screenStream);
+        }
+        screenSendersRef.current.set(remoteUserId, senders);
       }
 
       peer.onicecandidate = (event) => {
@@ -775,12 +797,37 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           });
           return;
         }
-        voiceLog("remote track received", {
+        voiceLog("remote audio track received", {
           remoteUserId,
           trackId: event.track.id,
           streamId: stream.id,
         });
-        setRemoteStreams((current) => ({ ...current, [remoteUserId]: stream }));
+        setRemoteStreams((current) => {
+          const existing = current[remoteUserId];
+          const mergedStream = existing ?? new MediaStream();
+          const alreadyAdded = mergedStream.getAudioTracks().some((track) => track.id === event.track.id);
+          if (!alreadyAdded) {
+            mergedStream.addTrack(event.track);
+          }
+          return { ...current, [remoteUserId]: mergedStream };
+        });
+        event.track.addEventListener("ended", () => {
+          setRemoteStreams((current) => {
+            const existing = current[remoteUserId];
+            if (!existing) {
+              return current;
+            }
+            const nextStream = new MediaStream(
+              existing.getAudioTracks().filter((track) => track.id !== event.track.id),
+            );
+            if (nextStream.getAudioTracks().length === 0) {
+              const next = { ...current };
+              delete next[remoteUserId];
+              return next;
+            }
+            return { ...current, [remoteUserId]: nextStream };
+          });
+        });
       };
 
       peer.onconnectionstatechange = () => {
@@ -840,7 +887,11 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           channel_id: connectedChannelId,
           server_id: serverId,
         });
-        clearChannel(connectedChannelId);
+        if (currentUserId) {
+          removeParticipant(connectedChannelId, currentUserId);
+        } else {
+          clearChannel(connectedChannelId);
+        }
         clearLocalScreenState(true);
         screenSendersRef.current.clear();
         setRemoteScreenStreams({});
@@ -905,8 +956,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       closeAllPeers,
       clearLocalScreenState,
       connectedChannelId,
+      currentUserId,
       deafened,
       muted,
+      removeParticipant,
       refreshInputDevices,
       requestLocalAudioStream,
       selectedInputDeviceId,
@@ -923,7 +976,11 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     const channelId = connectedChannelId;
     if (channelId) {
       sendGatewayEvent("VOICE_LEAVE", { channel_id: channelId });
-      clearChannel(channelId);
+      if (currentUserId) {
+        removeParticipant(channelId, currentUserId);
+      } else {
+        clearChannel(channelId);
+      }
     }
 
     pendingInitialOffersChannelRef.current = null;
@@ -936,7 +993,17 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     setRemoteStreams({});
     setRemoteScreenStreams({});
     setConnectedChannel(null);
-  }, [clearChannel, clearLocalScreenState, closeAllPeers, connectedChannelId, sendGatewayEvent, setConnectedChannel, stopLocalStream]);
+  }, [
+    clearChannel,
+    clearLocalScreenState,
+    closeAllPeers,
+    connectedChannelId,
+    currentUserId,
+    removeParticipant,
+    sendGatewayEvent,
+    setConnectedChannel,
+    stopLocalStream,
+  ]);
 
   const toggleMuted = useCallback(() => {
     const nextMuted = !muted;
@@ -998,7 +1065,11 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         video: {
           frameRate: { ideal: 30, max: 60 },
         },
-        audio: false,
+        audio: true,
+      },
+      {
+        video: true,
+        audio: true,
       },
       {
         video: true,
@@ -1054,9 +1125,19 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       voiceWarn("screen share start failed: no video track");
       return false;
     }
+    const screenAudioTrack = screenStream.getAudioTracks()[0] ?? null;
+    if (screenAudioTrack) {
+      voiceLog("screen share captured system audio track", {
+        trackId: screenAudioTrack.id,
+        sourceId: preferredSourceId,
+      });
+    } else {
+      voiceWarn("screen share started without system audio track", { sourceId: preferredSourceId });
+    }
 
     localScreenStreamRef.current = screenStream;
     localScreenTrackRef.current = screenTrack;
+    localScreenAudioTrackRef.current = screenAudioTrack;
     setScreenSharing(true);
     setLocalScreenStream(screenStream);
     sendGatewayEvent("VOICE_STATE_UPDATE", {
@@ -1070,11 +1151,23 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     screenTrack.onended = () => {
       void stopScreenShare();
     };
+    if (screenAudioTrack) {
+      screenAudioTrack.onended = () => {
+        if (localScreenAudioTrackRef.current?.id === screenAudioTrack.id) {
+          localScreenAudioTrackRef.current = null;
+        }
+      };
+    }
 
     for (const [remoteUserId, peer] of peersRef.current.entries()) {
       try {
-        const sender = peer.addTrack(screenTrack, screenStream);
-        screenSendersRef.current.set(remoteUserId, sender);
+        const senders: ScreenShareSenders = {
+          video: peer.addTrack(screenTrack, screenStream),
+        };
+        if (screenAudioTrack && screenAudioTrack.readyState === "live") {
+          senders.audio = peer.addTrack(screenAudioTrack, screenStream);
+        }
+        screenSendersRef.current.set(remoteUserId, senders);
         await renegotiatePeer(remoteUserId);
       } catch {
         closePeer(remoteUserId);
@@ -1113,9 +1206,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       }
 
       nextTrack.enabled = !muted;
-      for (const peer of peersRef.current.values()) {
+      for (const [remoteUserId, peer] of peersRef.current.entries()) {
+        const screenAudioSender = screenSendersRef.current.get(remoteUserId)?.audio;
         for (const sender of peer.getSenders()) {
-          if (sender.track?.kind !== "audio") {
+          if (sender.track?.kind !== "audio" || sender === screenAudioSender) {
             continue;
           }
           try {

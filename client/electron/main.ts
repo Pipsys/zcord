@@ -398,6 +398,7 @@ const createWindow = async (): Promise<void> => {
 
         callback({
           video: preferredSource,
+          audio: "loopback",
         });
       } catch (error) {
         console.error("[screen-share] display media request failed", error);
