@@ -1,8 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Suspense, lazy, useEffect, useRef } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
+import { Sidebar } from "@/components/layout/Sidebar";
 import { TitleBar } from "@/components/layout/TitleBar";
+import { AppLoader } from "@/components/ui/AppLoader";
 import { useI18n } from "@/i18n/provider";
 import HomePage from "@/pages/Home";
 import LoginPage from "@/pages/Login";
@@ -14,13 +16,37 @@ import { useUiStore } from "@/store/uiStore";
 
 const SettingsPage = lazy(() => import("@/pages/Settings"));
 
+const contentVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+} as const;
+
+const contentTransition = {
+  duration: 0.16,
+  ease: [0.2, 0, 0, 1],
+} as const;
+
+const resolveAppContentKey = (pathname: string): string => {
+  if (pathname.startsWith("/app/server/")) {
+    return "/app/server";
+  }
+  if (pathname.startsWith("/app/settings")) {
+    return "/app/settings";
+  }
+  if (pathname.startsWith("/app/home")) {
+    return "/app/home";
+  }
+  return pathname;
+};
+
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const token = useAuthStore((state) => state.token);
   const hydrated = useAuthStore((state) => state.hydrated);
   const { t } = useI18n();
 
   if (!hydrated) {
-    return <div className="grid h-screen place-items-center bg-paw-bg-primary text-paw-text-secondary">{t("common.loading")}</div>;
+    return <AppLoader title={t("common.loading")} />;
   }
 
   if (!token) {
@@ -30,13 +56,44 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   return children;
 };
 
+const AppShell = () => {
+  const { t } = useI18n();
+  const location = useLocation();
+  const contentKey = `${resolveAppContentKey(location.pathname)}${location.search}`;
+
+  return (
+    <ProtectedRoute>
+      <div className="flex h-full flex-col">
+        <TitleBar />
+        <div className="min-h-0 flex flex-1 overflow-hidden">
+          <Sidebar />
+          <main className="min-h-0 flex-1 overflow-hidden">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={contentKey}
+                variants={contentVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={contentTransition}
+                className="h-full"
+              >
+                <Outlet />
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
+    </ProtectedRoute>
+  );
+};
+
 const App = () => {
   const { t } = useI18n();
   const hydrate = useAuthStore((state) => state.hydrate);
   const hydrateTheme = useUiStore((state) => state.hydrateTheme);
   const toasts = useUiStore((state) => state.toasts);
   const removeToast = useUiStore((state) => state.removeToast);
-  const location = useLocation();
   const toastTimersRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -81,57 +138,24 @@ const App = () => {
   return (
     <div className="h-screen overflow-hidden bg-paw-bg-primary text-paw-text-primary">
       <RealtimeProvider>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 6, scale: 0.997, filter: "blur(1px)" }}
-            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: -4, scale: 1.003, filter: "blur(1px)" }}
-            transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
-            className="h-full"
-          >
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route
-                path="/app/home"
-                element={
-                  <ProtectedRoute>
-                    <div className="flex h-full flex-col">
-                      <TitleBar />
-                      <HomePage />
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/server/:serverId"
-                element={
-                  <ProtectedRoute>
-                    <div className="flex h-full flex-col">
-                      <TitleBar />
-                      <ServerPage />
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/settings"
-                element={
-                  <ProtectedRoute>
-                    <div className="flex h-full flex-col">
-                      <TitleBar />
-                      <Suspense fallback={<div className="grid h-full place-items-center text-paw-text-secondary">{t("common.loading_settings")}</div>}>
-                        <SettingsPage />
-                      </Suspense>
-                    </div>
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="*" element={<Navigate to="/app/home" replace />} />
-            </Routes>
-          </motion.div>
-        </AnimatePresence>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/app" element={<AppShell />}>
+            <Route path="home" element={<HomePage />} />
+            <Route path="server/:serverId" element={<ServerPage />} />
+            <Route
+              path="settings"
+              element={
+                <Suspense fallback={<AppLoader compact title={t("common.loading_settings")} />}>
+                  <SettingsPage />
+                </Suspense>
+              }
+            />
+            <Route index element={<Navigate to="home" replace />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/app/home" replace />} />
+        </Routes>
       </RealtimeProvider>
 
       <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[320px] max-w-[92vw] flex-col gap-2">

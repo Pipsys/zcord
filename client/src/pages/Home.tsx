@@ -22,7 +22,6 @@ import type { UploadProgressEvent } from "@/api/client";
 import { get } from "@/api/client";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -604,8 +603,6 @@ const HomePage = () => {
 
   return (
     <div className="flex h-full overflow-hidden bg-paw-bg-primary">
-      <Sidebar />
-
       <aside className="flex h-full w-80 flex-col border-r border-black/35 bg-paw-bg-secondary p-2">
         <div className="mb-2 space-y-1 px-1">
           <button

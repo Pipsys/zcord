@@ -20,11 +20,11 @@ import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChannelList } from "@/components/layout/ChannelList";
 import { MemberList } from "@/components/layout/MemberList";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Modal } from "@/components/ui/Modal";
+import { AppLoader } from "@/components/ui/AppLoader";
 import { useI18n } from "@/i18n/provider";
 import { useRealtime } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
@@ -566,8 +566,6 @@ const ServerPage = () => {
 
   return (
     <div className="flex h-full overflow-hidden bg-paw-bg-primary">
-      <Sidebar />
-
       <ChannelList
         connectedVoiceChannelId={voiceRoom.connectedChannelId}
         onJoinVoice={(channelId) => {
@@ -637,7 +635,7 @@ const ServerPage = () => {
           ) : null}
 
           {activeChannel?.type === "voice" ? (
-            <Suspense fallback={<div className="p-4 text-sm text-paw-text-muted">{t("server.loading_voice")}</div>}>
+            <Suspense fallback={<AppLoader compact title={t("server.loading_voice")} />}>
               <VoiceChannel
                 serverName={currentServer?.name ?? null}
                 channelId={activeChannel.id}

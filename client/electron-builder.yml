@@ -9,9 +9,14 @@ directories:
   output: release
 publish: null
 win:
+  icon: icon.ico
   target:
     - nsis
   artifactName: "zcord-Setup-${version}.${ext}"
+nsis:
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico
+  installerHeaderIcon: icon.ico
 mac:
   target:
     - dmg

@@ -79,6 +79,35 @@ const ICE_SERVERS = buildIceServers();
 const DEFAULT_INPUT_DEVICE_ID = "__system_default__";
 const DEFAULT_SCREEN_SOURCE_ID = "__auto__";
 const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
+const DEFAULT_JOIN_SOUND_PATH = "sounds/voice-join.wav";
+const DEFAULT_LEAVE_SOUND_PATH = "sounds/voice-leave.wav";
+const PRESENCE_SOUND_VOLUME_RAW = Number(import.meta.env.VITE_VOICE_PRESENCE_SOUND_VOLUME);
+const PRESENCE_SOUND_VOLUME = Number.isFinite(PRESENCE_SOUND_VOLUME_RAW)
+  ? Math.min(1, Math.max(0, PRESENCE_SOUND_VOLUME_RAW))
+  : 0.5;
+
+const resolvePresenceSoundUrl = (kind: "join" | "leave"): string => {
+  const configured =
+    kind === "join"
+      ? (import.meta.env.VITE_VOICE_JOIN_SOUND_URL as string | undefined)
+      : (import.meta.env.VITE_VOICE_LEAVE_SOUND_URL as string | undefined);
+  const fallbackPath = kind === "join" ? DEFAULT_JOIN_SOUND_PATH : DEFAULT_LEAVE_SOUND_PATH;
+  const normalized = typeof configured === "string" && configured.trim().length > 0 ? configured.trim() : fallbackPath;
+
+  if (typeof window === "undefined") {
+    return normalized;
+  }
+
+  if (/^(https?:|file:|data:|blob:)/i.test(normalized)) {
+    return normalized;
+  }
+
+  try {
+    return new URL(normalized, window.location.href).toString();
+  } catch {
+    return normalized;
+  }
+};
 
 const isMissingIpcHandlerError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -144,6 +173,14 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const connectedChannelIdRef = useRef<string | null>(null);
   const lastRejoinSocketRef = useRef<WebSocket | null>(null);
   const sendGatewayEventRef = useRef<(type: string, data: Record<string, unknown>) => boolean>(() => false);
+  const presenceAudioContextRef = useRef<AudioContext | null>(null);
+  const presenceAudioElementsRef = useRef<{ join: HTMLAudioElement | null; leave: HTMLAudioElement | null }>({
+    join: null,
+    leave: null,
+  });
+  const failedPresenceWavRef = useRef<{ join: boolean; leave: boolean }>({ join: false, leave: false });
+  const previousRemoteParticipantIdsRef = useRef<Set<string>>(new Set());
+  const presenceBaselineChannelRef = useRef<string | null>(null);
 
   const participants = useMemo(() => {
     if (!connectedChannelId) {
@@ -220,6 +257,90 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     [socket],
   );
 
+  const playPresenceTone = useCallback((kind: "join" | "leave"): void => {
+    const AudioContextCtor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    if (!presenceAudioContextRef.current) {
+      presenceAudioContextRef.current = new AudioContextCtor();
+    }
+    const context = presenceAudioContextRef.current;
+    if (!context) {
+      return;
+    }
+
+    if (context.state === "suspended") {
+      void context.resume().catch(() => undefined);
+    }
+
+    const notes = kind === "join" ? [740, 988] : [520, 392];
+    const noteDuration = 0.07;
+    const gapDuration = 0.03;
+    const startAt = context.currentTime + 0.005;
+
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const noteStart = startAt + index * (noteDuration + gapDuration);
+      const noteEnd = noteStart + noteDuration;
+
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(frequency, noteStart);
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.exponentialRampToValueAtTime(0.04, noteStart + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start(noteStart);
+      oscillator.stop(noteEnd + 0.02);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+    });
+  }, []);
+
+  const getPresenceAudioElement = useCallback((kind: "join" | "leave"): HTMLAudioElement => {
+    const existing = presenceAudioElementsRef.current[kind];
+    if (existing) {
+      return existing;
+    }
+
+    const audio = new Audio(resolvePresenceSoundUrl(kind));
+    audio.preload = "auto";
+    audio.volume = PRESENCE_SOUND_VOLUME;
+    audio.addEventListener("error", () => {
+      failedPresenceWavRef.current[kind] = true;
+    });
+
+    presenceAudioElementsRef.current[kind] = audio;
+    return audio;
+  }, []);
+
+  const playPresenceCue = useCallback(
+    (kind: "join" | "leave"): void => {
+      if (failedPresenceWavRef.current[kind]) {
+        playPresenceTone(kind);
+        return;
+      }
+
+      const audio = getPresenceAudioElement(kind);
+      audio.currentTime = 0;
+      const playback = audio.play();
+      if (playback && typeof playback.catch === "function") {
+        void playback.catch(() => {
+          failedPresenceWavRef.current[kind] = true;
+          playPresenceTone(kind);
+        });
+      }
+    },
+    [getPresenceAudioElement, playPresenceTone],
+  );
+
   useEffect(() => {
     connectedChannelIdRef.current = connectedChannelId;
   }, [connectedChannelId]);
@@ -227,6 +348,51 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   useEffect(() => {
     sendGatewayEventRef.current = sendGatewayEvent;
   }, [sendGatewayEvent]);
+
+  useEffect(() => {
+    if (!connectedChannelId) {
+      previousRemoteParticipantIdsRef.current = new Set();
+      presenceBaselineChannelRef.current = null;
+      return;
+    }
+
+    const remoteIds = new Set(
+      participants
+        .filter((participant) => participant.user_id !== currentUserId)
+        .map((participant) => participant.user_id),
+    );
+
+    if (presenceBaselineChannelRef.current !== connectedChannelId) {
+      presenceBaselineChannelRef.current = connectedChannelId;
+      previousRemoteParticipantIdsRef.current = remoteIds;
+      return;
+    }
+
+    const previousRemoteIds = previousRemoteParticipantIdsRef.current;
+    let joinedCount = 0;
+    let leftCount = 0;
+
+    for (const remoteId of remoteIds) {
+      if (!previousRemoteIds.has(remoteId)) {
+        joinedCount += 1;
+      }
+    }
+    for (const remoteId of previousRemoteIds) {
+      if (!remoteIds.has(remoteId)) {
+        leftCount += 1;
+      }
+    }
+
+    previousRemoteParticipantIdsRef.current = remoteIds;
+
+    if (joinedCount > 0 && leftCount === 0) {
+      playPresenceCue("join");
+      return;
+    }
+    if (leftCount > 0 && joinedCount === 0) {
+      playPresenceCue("leave");
+    }
+  }, [connectedChannelId, currentUserId, participants, playPresenceCue]);
 
   const buildAudioConstraints = useCallback((deviceId?: string): MediaTrackConstraints => {
     const constraints: MediaTrackConstraints = {
@@ -1028,6 +1194,35 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
   useEffect(() => {
     if (!connectedChannelId) {
+      setRemoteScreenStreams({});
+      return;
+    }
+
+    const sharingRemoteUsers = new Set(
+      participants
+        .filter((participant) => participant.user_id !== currentUserId && Boolean(participant.screen_sharing))
+        .map((participant) => participant.user_id),
+    );
+
+    setRemoteScreenStreams((current) => {
+      let changed = false;
+      const next: Record<string, MediaStream> = {};
+
+      for (const [userId, stream] of Object.entries(current)) {
+        const hasLiveVideoTrack = stream.getVideoTracks().some((track) => track.readyState === "live");
+        if (sharingRemoteUsers.has(userId) && hasLiveVideoTrack) {
+          next[userId] = stream;
+        } else {
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [connectedChannelId, currentUserId, participants]);
+
+  useEffect(() => {
+    if (!connectedChannelId) {
       return;
     }
 
@@ -1183,6 +1378,21 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       closeAllPeers();
       setRemoteStreams({});
       setRemoteScreenStreams({});
+      const presenceAudioElements = presenceAudioElementsRef.current;
+      for (const key of ["join", "leave"] as const) {
+        const audio = presenceAudioElements[key];
+        if (!audio) {
+          continue;
+        }
+        audio.pause();
+        audio.src = "";
+        presenceAudioElements[key] = null;
+      }
+      failedPresenceWavRef.current = { join: false, leave: false };
+      if (presenceAudioContextRef.current) {
+        void presenceAudioContextRef.current.close().catch(() => undefined);
+        presenceAudioContextRef.current = null;
+      }
       if (activeChannelId) {
         clearChannel(activeChannelId);
       }
