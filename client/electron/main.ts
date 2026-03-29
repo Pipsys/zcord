@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Notification, session } from "electron";
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, Notification, session } from "electron";
 import path from "node:path";
 import keytar from "keytar";
 
@@ -352,6 +352,36 @@ const createWindow = async (): Promise<void> => {
     const isMainWindow = Boolean(mainWindow && webContents && webContents.id === mainWindow.webContents.id);
     return isMainWindow && ALLOWED_MEDIA_PERMISSIONS.has(permission);
   });
+
+  session.defaultSession.setDisplayMediaRequestHandler(
+    async (request, callback) => {
+      const isMainWindow = Boolean(mainWindow && request.frame?.processId === mainWindow.webContents.mainFrame.processId);
+      if (!isMainWindow) {
+        callback({});
+        return;
+      }
+
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ["screen", "window"],
+          fetchWindowIcons: false,
+          thumbnailSize: { width: 0, height: 0 },
+        });
+        const preferredSource = sources.find((source) => source.id.startsWith("screen:")) ?? sources[0];
+        if (!preferredSource) {
+          callback({});
+          return;
+        }
+
+        callback({
+          video: preferredSource,
+        });
+      } catch (error) {
+        console.error("[screen-share] display media request failed", error);
+        callback({});
+      }
+    },
+  );
 
   if (process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);

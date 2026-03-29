@@ -346,6 +346,14 @@ const ServerPage = () => {
     }
   };
 
+  const handleToggleScreenShare = async () => {
+    const wasSharing = voiceRoom.screenSharing;
+    const ok = await voiceRoom.toggleScreenShare();
+    if (!ok && !wasSharing) {
+      pushToast(t("voice.screen_share_failed"), t("voice.screen_share_failed_desc"));
+    }
+  };
+
   const copyInvite = async () => {
     if (!serverId) {
       return;
@@ -629,9 +637,7 @@ const ServerPage = () => {
                 onLeave={() => void voiceRoom.leave()}
                 onToggleMute={voiceRoom.toggleMuted}
                 onToggleDeafen={voiceRoom.toggleDeafened}
-                onToggleScreenShare={() => {
-                  void voiceRoom.toggleScreenShare();
-                }}
+                onToggleScreenShare={() => void handleToggleScreenShare()}
                 onVolumeChange={voiceRoom.setVolume}
                 onInputDeviceChange={(deviceId) => {
                   void voiceRoom.setInputDevice(deviceId);

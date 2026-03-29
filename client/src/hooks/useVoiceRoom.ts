@@ -726,13 +726,17 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         },
         audio: false,
       });
-    } catch {
+    } catch (error) {
+      voiceWarn("screen share start failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
 
     const screenTrack = screenStream.getVideoTracks()[0];
     if (!screenTrack) {
       screenStream.getTracks().forEach((track) => track.stop());
+      voiceWarn("screen share start failed: no video track");
       return false;
     }
 

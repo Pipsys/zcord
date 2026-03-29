@@ -233,6 +233,8 @@ const ru = {
   "voice.no_participants": "Пока никого в голосовом канале",
   "voice.connect_failed": "Не удалось подключиться к голосовому каналу",
   "voice.connect_failed_desc": "Проверьте доступ к микрофону и состояние соединения.",
+  "voice.screen_share_failed": "Не удалось запустить трансляцию экрана",
+  "voice.screen_share_failed_desc": "Проверьте разрешение на запись экрана и попробуйте снова.",
 
   "settings.title": "Настройки",
   "settings.description": "Профиль, уведомления, внешний вид и голосовые клавиши.",
@@ -495,6 +497,8 @@ const en: MessageCatalog = {
   "voice.no_participants": "No participants in this voice channel",
   "voice.connect_failed": "Failed to connect to voice channel",
   "voice.connect_failed_desc": "Check microphone permission and connection state.",
+  "voice.screen_share_failed": "Failed to start screen sharing",
+  "voice.screen_share_failed_desc": "Check screen recording permission and try again.",
 
   "settings.title": "Settings",
   "settings.description": "Profile, notifications, appearance and voice keybinds.",
