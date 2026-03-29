@@ -1,4 +1,4 @@
-﻿import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
@@ -47,6 +47,13 @@ interface AttachmentUploadProgressPayload {
   totalBytes: number;
 }
 
+interface ScreenShareSourcePayload {
+  id: string;
+  name: string;
+  displayId: string;
+  kind: "screen" | "window";
+}
+
 const pawcordApi = {
   system: {
     platform: process.platform,
@@ -58,6 +65,10 @@ const pawcordApi = {
   },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard:write-text", text) as Promise<boolean>,
+  },
+  media: {
+    listScreenSources: () => ipcRenderer.invoke("screen-share:list-sources") as Promise<ScreenShareSourcePayload[]>,
+    selectScreenSource: (sourceId: string | null) => ipcRenderer.invoke("screen-share:select-source", sourceId) as Promise<boolean>,
   },
   auth: {
     setToken: (token: string) => ipcRenderer.invoke("auth:set-token", token),

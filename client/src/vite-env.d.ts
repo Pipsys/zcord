@@ -1,4 +1,4 @@
-﻿/// <reference types="vite/client" />
+/// <reference types="vite/client" />
 
 interface ApiRequestPayload {
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -31,6 +31,13 @@ interface AttachmentUploadProgressPayload {
   totalBytes: number;
 }
 
+interface ScreenShareSource {
+  id: string;
+  name: string;
+  displayId: string;
+  kind: "screen" | "window";
+}
+
 interface PawcordBridge {
   system: {
     platform: string;
@@ -42,6 +49,10 @@ interface PawcordBridge {
   };
   clipboard: {
     writeText: (text: string) => Promise<boolean>;
+  };
+  media: {
+    listScreenSources: () => Promise<ScreenShareSource[]>;
+    selectScreenSource: (sourceId: string | null) => Promise<boolean>;
   };
   auth: {
     setToken: (token: string) => Promise<boolean>;

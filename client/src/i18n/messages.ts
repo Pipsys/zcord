@@ -1,4 +1,4 @@
-﻿export type Locale = "ru" | "en";
+export type Locale = "ru" | "en";
 
 const ru = {
   "common.loading": "Загрузка...",
@@ -235,6 +235,15 @@ const ru = {
   "voice.connect_failed_desc": "Проверьте доступ к микрофону и состояние соединения.",
   "voice.screen_share_failed": "Не удалось запустить трансляцию экрана",
   "voice.screen_share_failed_desc": "Проверьте разрешение на запись экрана и попробуйте снова.",
+  "voice.speaking": "Говорит",
+  "voice.live_badge": "В эфире",
+  "voice.screen_source": "Источник экрана",
+  "voice.screen_source_auto": "Автовыбор",
+  "voice.screen_source_display": "Монитор",
+  "voice.screen_source_window": "Окно",
+  "voice.refresh_sources": "Обновить источники",
+  "voice.expand_stream": "Развернуть",
+  "voice.fullscreen_close": "Закрыть",
 
   "settings.title": "Настройки",
   "settings.description": "Профиль, уведомления, внешний вид и голосовые клавиши.",
@@ -499,6 +508,15 @@ const en: MessageCatalog = {
   "voice.connect_failed_desc": "Check microphone permission and connection state.",
   "voice.screen_share_failed": "Failed to start screen sharing",
   "voice.screen_share_failed_desc": "Check screen recording permission and try again.",
+  "voice.speaking": "Speaking",
+  "voice.live_badge": "Live",
+  "voice.screen_source": "Screen source",
+  "voice.screen_source_auto": "Auto",
+  "voice.screen_source_display": "Display",
+  "voice.screen_source_window": "Window",
+  "voice.refresh_sources": "Refresh sources",
+  "voice.expand_stream": "Expand",
+  "voice.fullscreen_close": "Close",
 
   "settings.title": "Settings",
   "settings.description": "Profile, notifications, appearance and voice keybinds.",

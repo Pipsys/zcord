@@ -627,12 +627,16 @@ const ServerPage = () => {
                 participants={voiceRoom.connectedChannelId === activeChannel.id ? voiceRoom.participants : []}
                 remoteStreams={voiceRoom.remoteStreams}
                 remoteScreenStreams={voiceRoom.remoteScreenStreams}
+                localAudioStream={voiceRoom.localAudioStream}
+                localScreenStream={voiceRoom.localScreenStream}
                 muted={voiceRoom.muted}
                 deafened={voiceRoom.deafened}
                 screenSharing={voiceRoom.screenSharing}
                 volume={voiceRoom.volume}
                 inputDevices={voiceRoom.inputDevices}
                 selectedInputDeviceId={voiceRoom.selectedInputDeviceId}
+                screenSources={voiceRoom.screenSources}
+                selectedScreenSourceId={voiceRoom.selectedScreenSourceId}
                 onConnect={() => void handleVoiceJoin(activeChannel.id)}
                 onLeave={() => void voiceRoom.leave()}
                 onToggleMute={voiceRoom.toggleMuted}
@@ -641,6 +645,12 @@ const ServerPage = () => {
                 onVolumeChange={voiceRoom.setVolume}
                 onInputDeviceChange={(deviceId) => {
                   void voiceRoom.setInputDevice(deviceId);
+                }}
+                onRefreshScreenSources={() => {
+                  void voiceRoom.refreshScreenSources();
+                }}
+                onScreenSourceChange={(sourceId) => {
+                  void voiceRoom.setScreenSource(sourceId);
                 }}
               />
             </Suspense>

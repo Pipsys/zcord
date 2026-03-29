@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuthStore } from "@/store/authStore";
 import { type VoiceParticipant, useVoiceStore } from "@/store/voiceStore";
@@ -8,17 +8,28 @@ export interface VoiceInputDevice {
   label: string;
 }
 
+export interface ScreenShareSource {
+  id: string;
+  name: string;
+  displayId: string;
+  kind: "screen" | "window";
+}
+
 interface UseVoiceRoomResult {
   connectedChannelId: string | null;
   participants: VoiceParticipant[];
+  localAudioStream: MediaStream | null;
   remoteStreams: Record<string, MediaStream>;
   remoteScreenStreams: Record<string, MediaStream>;
+  localScreenStream: MediaStream | null;
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
   volume: number;
   inputDevices: VoiceInputDevice[];
   selectedInputDeviceId: string;
+  screenSources: ScreenShareSource[];
+  selectedScreenSourceId: string;
   join: (channelId: string, serverId: string | null) => Promise<boolean>;
   leave: () => Promise<void>;
   toggleMuted: () => void;
@@ -26,6 +37,8 @@ interface UseVoiceRoomResult {
   toggleScreenShare: () => Promise<boolean>;
   setVolume: (value: number) => void;
   setInputDevice: (deviceId: string) => Promise<boolean>;
+  refreshScreenSources: () => Promise<void>;
+  setScreenSource: (sourceId: string) => Promise<boolean>;
 }
 
 const buildIceServers = (): RTCIceServer[] => {
@@ -64,6 +77,7 @@ const buildIceServers = (): RTCIceServer[] => {
 
 const ICE_SERVERS = buildIceServers();
 const DEFAULT_INPUT_DEVICE_ID = "__system_default__";
+const DEFAULT_SCREEN_SOURCE_ID = "__auto__";
 const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
 
 const stringifyVoicePayload = (payload: unknown): string => {
@@ -101,12 +115,16 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [remoteScreenStreams, setRemoteScreenStreams] = useState<Record<string, MediaStream>>({});
+  const [localAudioStream, setLocalAudioStream] = useState<MediaStream | null>(null);
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [muted, setMuted] = useState(false);
   const [deafened, setDeafened] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
   const [volume, setVolumeState] = useState(1);
   const [inputDevices, setInputDevices] = useState<VoiceInputDevice[]>([]);
   const [selectedInputDeviceId, setSelectedInputDeviceId] = useState(DEFAULT_INPUT_DEVICE_ID);
+  const [screenSources, setScreenSources] = useState<ScreenShareSource[]>([]);
+  const [selectedScreenSourceId, setSelectedScreenSourceId] = useState(DEFAULT_SCREEN_SOURCE_ID);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const localScreenStreamRef = useRef<MediaStream | null>(null);
@@ -273,6 +291,52 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
   }, [selectedInputDeviceId]);
 
+  const refreshScreenSources = useCallback(async () => {
+    if (!window.pawcord?.media?.listScreenSources) {
+      setScreenSources([]);
+      setSelectedScreenSourceId(DEFAULT_SCREEN_SOURCE_ID);
+      return;
+    }
+
+    try {
+      const sources = await window.pawcord.media.listScreenSources();
+      const normalized = sources
+        .filter((source) => typeof source.id === "string" && source.id.trim().length > 0)
+        .map((source) => ({
+          id: source.id,
+          name: source.name,
+          displayId: source.displayId,
+          kind: source.kind,
+        }));
+
+      setScreenSources(normalized);
+      if (selectedScreenSourceId !== DEFAULT_SCREEN_SOURCE_ID) {
+        const selectedExists = normalized.some((source) => source.id === selectedScreenSourceId);
+        if (!selectedExists) {
+          setSelectedScreenSourceId(DEFAULT_SCREEN_SOURCE_ID);
+        }
+      }
+    } catch {
+      setScreenSources([]);
+      setSelectedScreenSourceId(DEFAULT_SCREEN_SOURCE_ID);
+    }
+  }, [selectedScreenSourceId]);
+
+  const setScreenSource = useCallback(async (sourceId: string): Promise<boolean> => {
+    const normalized = typeof sourceId === "string" && sourceId.trim().length > 0 ? sourceId.trim() : DEFAULT_SCREEN_SOURCE_ID;
+    setSelectedScreenSourceId(normalized);
+
+    if (!window.pawcord?.media?.selectScreenSource) {
+      return true;
+    }
+
+    try {
+      await window.pawcord.media.selectScreenSource(normalized === DEFAULT_SCREEN_SOURCE_ID ? null : normalized);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
   const waitForParticipantsSnapshot = useCallback(async (channelId: string): Promise<boolean> => {
     const startedAt = Date.now();
     const timeoutMs = 4_000;
@@ -289,6 +353,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const stopLocalStream = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    setLocalAudioStream(null);
   }, []);
 
   const clearLocalScreenState = useCallback((stopTracks: boolean) => {
@@ -312,6 +377,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     localScreenTrackRef.current = null;
     localScreenStreamRef.current = null;
     setScreenSharing(false);
+    setLocalScreenStream(null);
   }, []);
 
   const closePeer = useCallback((remoteUserId: string) => {
@@ -411,15 +477,26 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     clearLocalScreenState(true);
+    const channelId = connectedChannelIdRef.current;
+    if (channelId) {
+      sendGatewayEventRef.current("VOICE_STATE_UPDATE", {
+        channel_id: channelId,
+        server_id: connectedServerIdRef.current,
+        muted,
+        deafened,
+        screen_sharing: false,
+      });
+    }
 
     for (const remoteUserId of renegotiateTargets) {
       await renegotiatePeer(remoteUserId);
     }
     return true;
-  }, [clearLocalScreenState, renegotiatePeer]);
+  }, [clearLocalScreenState, deafened, muted, renegotiatePeer]);
 
   useEffect(() => {
     void refreshInputDevices();
+    void refreshScreenSources();
 
     const mediaDevices = navigator.mediaDevices;
     if (!mediaDevices || typeof mediaDevices.addEventListener !== "function") {
@@ -434,7 +511,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     return () => {
       mediaDevices.removeEventListener("devicechange", handleDeviceChange);
     };
-  }, [refreshInputDevices]);
+  }, [refreshInputDevices, refreshScreenSources]);
 
   const flushPendingCandidates = useCallback(async (remoteUserId: string, peer: RTCPeerConnection) => {
     const queued = pendingCandidatesRef.current.get(remoteUserId);
@@ -593,6 +670,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
             track.enabled = !muted;
           });
           localStreamRef.current = stream;
+          setLocalAudioStream(stream);
           await refreshInputDevices();
         }
       } catch {
@@ -616,6 +694,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         server_id: serverId,
         muted,
         deafened,
+        screen_sharing: Boolean(localScreenTrackRef.current),
       });
 
       const hasSnapshot = await waitForParticipantsSnapshot(channelId);
@@ -688,6 +767,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         channel_id: connectedChannelId,
         muted: nextMuted,
         deafened,
+        screen_sharing: Boolean(localScreenTrackRef.current),
       });
     }
   }, [connectedChannelId, deafened, muted, sendGatewayEvent]);
@@ -700,6 +780,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         channel_id: connectedChannelId,
         muted,
         deafened: nextDeafened,
+        screen_sharing: Boolean(localScreenTrackRef.current),
       });
     }
   }, [connectedChannelId, deafened, muted, sendGatewayEvent]);
@@ -715,6 +796,17 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
       voiceWarn("screen share is not supported in this environment");
+      return false;
+    }
+
+    await refreshScreenSources();
+    const preferredSourceId =
+      selectedScreenSourceId !== DEFAULT_SCREEN_SOURCE_ID && screenSources.some((source) => source.id === selectedScreenSourceId)
+        ? selectedScreenSourceId
+        : DEFAULT_SCREEN_SOURCE_ID;
+    const selected = await setScreenSource(preferredSourceId);
+    if (!selected) {
+      voiceWarn("screen share source selection failed", { sourceId: preferredSourceId });
       return false;
     }
 
@@ -743,6 +835,14 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     localScreenStreamRef.current = screenStream;
     localScreenTrackRef.current = screenTrack;
     setScreenSharing(true);
+    setLocalScreenStream(screenStream);
+    sendGatewayEvent("VOICE_STATE_UPDATE", {
+      channel_id: connectedChannelIdRef.current,
+      server_id: connectedServerIdRef.current,
+      muted,
+      deafened,
+      screen_sharing: true,
+    });
 
     screenTrack.onended = () => {
       void stopScreenShare();
@@ -759,7 +859,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     return true;
-  }, [closePeer, renegotiatePeer, stopScreenShare]);
+  }, [closePeer, refreshScreenSources, renegotiatePeer, screenSources, selectedScreenSourceId, setScreenSource, stopScreenShare]);
 
   const setVolume = useCallback((value: number) => {
     const next = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
@@ -805,6 +905,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       const previousStream = localStreamRef.current;
       localStreamRef.current = nextStream;
+      setLocalAudioStream(nextStream);
       previousStream?.getTracks().forEach((track) => track.stop());
 
       await refreshInputDevices();
@@ -986,6 +1087,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         server_id: serverId,
         muted,
         deafened,
+        screen_sharing: Boolean(localScreenTrackRef.current),
       });
       pendingInitialOffersChannelRef.current = channelId;
     };
@@ -1034,14 +1136,18 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   return {
     connectedChannelId,
     participants,
+    localAudioStream,
     remoteStreams,
     remoteScreenStreams,
+    localScreenStream,
     muted,
     deafened,
     screenSharing,
     volume,
     inputDevices,
     selectedInputDeviceId,
+    screenSources,
+    selectedScreenSourceId,
     join,
     leave,
     toggleMuted,
@@ -1049,5 +1155,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     toggleScreenShare,
     setVolume,
     setInputDevice,
+    refreshScreenSources,
+    setScreenSource,
   };
 };

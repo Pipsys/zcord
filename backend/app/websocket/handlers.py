@@ -204,6 +204,15 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
         server_id = data.get("server_id")
         if isinstance(server_id, str):
             await manager.subscribe_server(server_id, websocket)
+            snapshots = manager.get_voice_snapshots_for_server(server_id)
+            for snapshot in snapshots:
+                await websocket.send_json(
+                    {
+                        "op": "DISPATCH",
+                        "t": GatewayEventType.VOICE_PARTICIPANTS_SNAPSHOT.value,
+                        "d": snapshot,
+                    }
+                )
         channel_id = data.get("channel_id")
         if isinstance(channel_id, str):
             await manager.subscribe_dm(channel_id, websocket)
@@ -319,25 +328,25 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
         )
 
         if left_member is not None:
-            await manager.publish_voice(
-                left_member["channel_id"],
-                {
-                    "op": "DISPATCH",
-                    "t": GatewayEventType.VOICE_USER_LEFT.value,
-                    "d": left_member,
-                },
-            )
+            left_payload = {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_USER_LEFT.value,
+                "d": left_member,
+            }
+            await manager.publish_voice(left_member["channel_id"], left_payload)
+            left_server_id = left_member.get("server_id")
+            if isinstance(left_server_id, str):
+                await manager.publish_server(left_server_id, left_payload)
 
         if joined_member is not None:
-            await manager.publish_voice(
-                channel_id,
-                {
-                    "op": "DISPATCH",
-                    "t": GatewayEventType.VOICE_USER_JOINED.value,
-                    "d": joined_member,
-                },
-                exclude={websocket},
-            )
+            joined_payload = {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_USER_JOINED.value,
+                "d": joined_member,
+            }
+            await manager.publish_voice(channel_id, joined_payload, exclude={websocket})
+            if isinstance(server_id, str):
+                await manager.publish_server(server_id, joined_payload, exclude={websocket})
 
         await websocket.send_json(
             {
@@ -364,14 +373,15 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
             left_member["channel_id"],
             left_member.get("server_id"),
         )
-        await manager.publish_voice(
-            left_member["channel_id"],
-            {
-                "op": "DISPATCH",
-                "t": GatewayEventType.VOICE_USER_LEFT.value,
-                "d": left_member,
-            },
-        )
+        left_payload = {
+            "op": "DISPATCH",
+            "t": GatewayEventType.VOICE_USER_LEFT.value,
+            "d": left_member,
+        }
+        await manager.publish_voice(left_member["channel_id"], left_payload)
+        left_server_id = left_member.get("server_id")
+        if isinstance(left_server_id, str):
+            await manager.publish_server(left_server_id, left_payload)
 
         await websocket.send_json(
             {
@@ -439,21 +449,29 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
     if event_type == ClientEventType.VOICE_STATE_UPDATE.value:
         muted = _coerce_bool(data.get("muted"))
         deafened = _coerce_bool(data.get("deafened"))
-        if muted is None and deafened is None:
+        screen_sharing = _coerce_bool(data.get("screen_sharing"))
+        if muted is None and deafened is None and screen_sharing is None:
             return
 
-        member = await manager.update_voice_state(user_id=user_id, websocket=websocket, muted=muted, deafened=deafened)
+        member = await manager.update_voice_state(
+            user_id=user_id,
+            websocket=websocket,
+            muted=muted,
+            deafened=deafened,
+            screen_sharing=screen_sharing,
+        )
         if member is None:
             return
 
-        await manager.publish_voice(
-            member["channel_id"],
-            {
-                "op": "DISPATCH",
-                "t": GatewayEventType.VOICE_STATE_UPDATE.value,
-                "d": member,
-            },
-        )
+        state_payload = {
+            "op": "DISPATCH",
+            "t": GatewayEventType.VOICE_STATE_UPDATE.value,
+            "d": member,
+        }
+        await manager.publish_voice(member["channel_id"], state_payload)
+        member_server_id = member.get("server_id")
+        if isinstance(member_server_id, str):
+            await manager.publish_server(member_server_id, state_payload)
         return
 
     await websocket.send_json(

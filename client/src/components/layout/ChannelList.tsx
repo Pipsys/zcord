@@ -7,6 +7,9 @@ import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
 import { useChannelStore } from "@/store/channelStore";
 import { useServerStore } from "@/store/serverStore";
+import type { VoiceParticipant } from "@/store/voiceStore";
+import { useVoiceStore } from "@/store/voiceStore";
+import type { Channel } from "@/types";
 
 interface ChannelListProps {
   connectedVoiceChannelId: string | null;
@@ -19,6 +22,16 @@ interface ChannelListProps {
   canManageServer: boolean;
   isCreatingChannel: boolean;
 }
+
+const toParticipantName = (participant: VoiceParticipant, currentUserId: string | null, currentUsername: string | null): string => {
+  if (participant.user_id === currentUserId && currentUsername) {
+    return currentUsername;
+  }
+  if (typeof participant.username === "string" && participant.username.trim().length > 0) {
+    return participant.username;
+  }
+  return `user-${participant.user_id.slice(0, 6)}`;
+};
 
 const HashIcon = () => (
   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -54,6 +67,7 @@ export const ChannelList = ({
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel);
   const servers = useServerStore((state) => state.servers);
   const activeServerId = useServerStore((state) => state.activeServerId);
+  const participantsByChannel = useVoiceStore((state) => state.participantsByChannel);
 
   const [context, setContext] = useState<{ visible: boolean; x: number; y: number; channelId: string | null }>({
     visible: false,
@@ -66,6 +80,29 @@ export const ChannelList = ({
   const effectiveUser = user ?? meUser ?? null;
   const textChannels = useMemo(() => channels.filter((item) => item.type !== "voice"), [channels]);
   const voiceChannels = useMemo(() => channels.filter((item) => item.type === "voice"), [channels]);
+  const voiceParticipantsByChannel = useMemo(() => {
+    const next: Record<string, VoiceParticipant[]> = {};
+    for (const channel of voiceChannels) {
+      const byUser = new Map<string, VoiceParticipant>();
+      const channelParticipants = participantsByChannel[channel.id] ?? [];
+      for (const participant of channelParticipants) {
+        byUser.set(participant.user_id, participant);
+      }
+      const sorted = Array.from(byUser.values()).sort((left, right) => {
+        if (left.user_id === effectiveUser?.id) {
+          return -1;
+        }
+        if (right.user_id === effectiveUser?.id) {
+          return 1;
+        }
+        const leftName = toParticipantName(left, effectiveUser?.id ?? null, effectiveUser?.username ?? null);
+        const rightName = toParticipantName(right, effectiveUser?.id ?? null, effectiveUser?.username ?? null);
+        return leftName.localeCompare(rightName);
+      });
+      next[channel.id] = sorted;
+    }
+    return next;
+  }, [effectiveUser?.id, effectiveUser?.username, participantsByChannel, voiceChannels]);
 
   const actions = useMemo(
     () => [
@@ -82,6 +119,65 @@ export const ChannelList = ({
     ],
     [t],
   );
+
+  const renderVoiceChannel = (channel: Channel) => {
+    const active = activeChannelId === channel.id;
+    const connected = connectedVoiceChannelId === channel.id;
+    const channelParticipants = voiceParticipantsByChannel[channel.id] ?? [];
+
+    return (
+      <div key={channel.id} className="rounded">
+        <div
+          className={`flex items-center gap-2 rounded px-2 py-1.5 text-[14px] ${
+            active ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/60"
+          }`}
+        >
+          <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setActiveChannel(channel.id)}>
+            <span>
+              <VoiceIcon />
+            </span>
+            <span className="truncate">{channel.name}</span>
+          </button>
+
+          <button
+            className={`rounded px-2 py-0.5 text-xs font-medium ${connected ? "bg-[#3ba55d] text-white" : "bg-white/10 text-paw-text-secondary"}`}
+            onClick={() => {
+              if (connected) {
+                onLeaveVoice();
+              } else {
+                onJoinVoice(channel.id);
+              }
+            }}
+          >
+            {connected ? t("channels.leave_voice") : t("channels.join_voice")}
+          </button>
+        </div>
+
+        {channelParticipants.length > 0 ? (
+          <div className="ml-6 mt-1 space-y-1 border-l border-white/10 pl-2">
+            {channelParticipants.map((participant) => {
+              const isSelf = participant.user_id === effectiveUser?.id;
+              const name = toParticipantName(participant, effectiveUser?.id ?? null, effectiveUser?.username ?? null);
+              return (
+                <div key={`${channel.id}-${participant.user_id}`} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs text-paw-text-secondary">
+                  <Avatar src={participant.avatar_url ?? null} label={name} size="sm" online={!participant.deafened} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {name}
+                    {isSelf ? ` (${t("voice.you")})` : ""}
+                  </span>
+                  {participant.screen_sharing ? (
+                    <span className="rounded bg-[#da373c] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                      {t("voice.live_badge")}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <section className="flex h-full w-60 flex-col border-r border-white/10 bg-black/20 backdrop-blur-sm">
@@ -177,38 +273,7 @@ export const ChannelList = ({
           </div>
           <div className="mt-1 space-y-0.5">
             {voiceChannels.length === 0 ? <p className="px-2 py-1 text-xs text-paw-text-muted">{t("channels.empty")}</p> : null}
-            {voiceChannels.map((channel) => {
-              const active = activeChannelId === channel.id;
-              const connected = connectedVoiceChannelId === channel.id;
-              return (
-                <div
-                  key={channel.id}
-                  className={`flex items-center gap-2 rounded px-2 py-1.5 text-[14px] ${
-                    active ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/60"
-                  }`}
-                >
-                  <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setActiveChannel(channel.id)}>
-                    <span>
-                      <VoiceIcon />
-                    </span>
-                    <span className="truncate">{channel.name}</span>
-                  </button>
-
-                  <button
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${connected ? "bg-[#3ba55d] text-white" : "bg-white/10 text-paw-text-secondary"}`}
-                    onClick={() => {
-                      if (connected) {
-                        onLeaveVoice();
-                      } else {
-                        onJoinVoice(channel.id);
-                      }
-                    }}
-                  >
-                    {connected ? t("channels.leave_voice") : t("channels.join_voice")}
-                  </button>
-                </div>
-              );
-            })}
+            {voiceChannels.map((channel) => renderVoiceChannel(channel))}
           </div>
         </div>
       </div>

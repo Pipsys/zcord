@@ -297,6 +297,30 @@ interface UploadProgressPayload {
   totalBytes: number;
 }
 
+interface ScreenShareSourcePayload {
+  id: string;
+  name: string;
+  displayId: string;
+  kind: "screen" | "window";
+}
+
+let preferredDisplaySourceId: string | null = null;
+
+const getScreenShareSources = async () => {
+  return desktopCapturer.getSources({
+    types: ["screen", "window"],
+    fetchWindowIcons: false,
+    thumbnailSize: { width: 0, height: 0 },
+  });
+};
+
+const mapScreenShareSource = (source: { id: string; name: string; display_id: string }): ScreenShareSourcePayload => ({
+  id: source.id,
+  name: source.name,
+  displayId: source.display_id,
+  kind: source.id.startsWith("screen:") ? "screen" : "window",
+});
+
 const createWindow = async (): Promise<void> => {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -362,12 +386,11 @@ const createWindow = async (): Promise<void> => {
       }
 
       try {
-        const sources = await desktopCapturer.getSources({
-          types: ["screen", "window"],
-          fetchWindowIcons: false,
-          thumbnailSize: { width: 0, height: 0 },
-        });
-        const preferredSource = sources.find((source) => source.id.startsWith("screen:")) ?? sources[0];
+        const sources = await getScreenShareSources();
+        const selectedSource = preferredDisplaySourceId
+          ? sources.find((source) => source.id === preferredDisplaySourceId)
+          : null;
+        const preferredSource = selectedSource ?? sources.find((source) => source.id.startsWith("screen:")) ?? sources[0];
         if (!preferredSource) {
           callback({});
           return;
@@ -496,6 +519,20 @@ ipcMain.handle("window:maximize", () => {
 ipcMain.handle("window:close", () => mainWindow?.close());
 ipcMain.handle("clipboard:write-text", (_event, text: string) => {
   clipboard.writeText(text);
+  return true;
+});
+
+ipcMain.handle("screen-share:list-sources", async () => {
+  const sources = await getScreenShareSources();
+  return sources.map(mapScreenShareSource);
+});
+
+ipcMain.handle("screen-share:select-source", (_event, sourceId: string | null) => {
+  if (typeof sourceId === "string" && sourceId.trim().length > 0) {
+    preferredDisplaySourceId = sourceId.trim();
+  } else {
+    preferredDisplaySourceId = null;
+  }
   return true;
 });
 

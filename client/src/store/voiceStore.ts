@@ -9,6 +9,7 @@ export interface VoiceParticipant {
   avatar_url?: string | null;
   muted: boolean;
   deafened: boolean;
+  screen_sharing?: boolean;
 }
 
 export interface VoiceSignalEvent {
@@ -33,6 +34,7 @@ interface VoiceState {
     userId: string,
     muted: boolean,
     deafened: boolean,
+    screenSharing?: boolean,
     username?: string | null,
     avatarUrl?: string | null,
   ) => void;
@@ -87,7 +89,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         }
       }),
     ),
-  updateParticipantState: (channelId, userId, muted, deafened, username, avatarUrl) =>
+  updateParticipantState: (channelId, userId, muted, deafened, screenSharing, username, avatarUrl) =>
     set(
       produce<VoiceState>((state) => {
         const current = state.participantsByChannel[channelId] ?? [];
@@ -102,12 +104,16 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
             avatar_url: typeof avatarUrl === "string" ? avatarUrl : null,
             muted,
             deafened,
+            screen_sharing: typeof screenSharing === "boolean" ? screenSharing : false,
           });
           state.participantsByChannel[channelId] = next;
           return;
         }
         existing.muted = muted;
         existing.deafened = deafened;
+        if (typeof screenSharing === "boolean") {
+          existing.screen_sharing = screenSharing;
+        }
         if (typeof username === "string" || username === null) {
           existing.username = username;
         }

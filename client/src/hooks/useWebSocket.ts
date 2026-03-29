@@ -33,6 +33,7 @@ interface VoiceParticipantPayload {
   avatar_url: string | null;
   muted: boolean;
   deafened: boolean;
+  screen_sharing: boolean;
 }
 
 interface VoiceSnapshotPayload {
@@ -184,6 +185,7 @@ const parseVoiceParticipant = (value: unknown): VoiceParticipantPayload | null =
     avatar_url: typeof value.avatar_url === "string" ? value.avatar_url : null,
     muted: typeof value.muted === "boolean" ? value.muted : false,
     deafened: typeof value.deafened === "boolean" ? value.deafened : false,
+    screen_sharing: typeof value.screen_sharing === "boolean" ? value.screen_sharing : false,
   };
 };
 
@@ -455,6 +457,7 @@ export const useWebSocket = (): WebSocket | null => {
             participant.user_id,
             participant.muted,
             participant.deafened,
+            participant.screen_sharing,
             participant.username,
             participant.avatar_url,
           );

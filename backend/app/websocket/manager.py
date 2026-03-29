@@ -99,8 +99,8 @@ class ConnectionManager:
     async def send_to_user(self, user_id: str, payload: dict[str, Any]) -> None:
         await self._fanout(self._connections.get(user_id, set()), payload)
 
-    async def publish_server(self, server_id: str, payload: dict[str, Any]) -> None:
-        await self._fanout(self._server_subscriptions.get(server_id, set()), payload)
+    async def publish_server(self, server_id: str, payload: dict[str, Any], *, exclude: set[WebSocket] | None = None) -> None:
+        await self._fanout(self._server_subscriptions.get(server_id, set()), payload, exclude=exclude)
         try:
             await redis_client.publish(f"server:{server_id}", self._encode_pubsub_payload(payload))
         except RedisError:
@@ -149,6 +149,7 @@ class ConnectionManager:
                 "avatar_url": avatar_url,
                 "muted": False,
                 "deafened": False,
+                "screen_sharing": False,
             }
             members[user_id] = joined_member
         else:
@@ -157,6 +158,7 @@ class ConnectionManager:
             existing_member["server_id"] = server_id
             existing_member["username"] = username
             existing_member["avatar_url"] = avatar_url
+            existing_member["screen_sharing"] = bool(existing_member.get("screen_sharing", False))
 
         participants = list(self._voice_members[channel_id].values())
         return participants, joined_member, left_member
@@ -164,7 +166,15 @@ class ConnectionManager:
     async def leave_voice(self, *, user_id: str, websocket: WebSocket) -> dict[str, Any] | None:
         return self._leave_voice_membership(websocket, user_id)
 
-    async def update_voice_state(self, *, user_id: str, websocket: WebSocket, muted: bool | None, deafened: bool | None) -> dict[str, Any] | None:
+    async def update_voice_state(
+        self,
+        *,
+        user_id: str,
+        websocket: WebSocket,
+        muted: bool | None,
+        deafened: bool | None,
+        screen_sharing: bool | None,
+    ) -> dict[str, Any] | None:
         channel_id = self._socket_voice_channel.get(websocket)
         if channel_id is None:
             return None
@@ -181,6 +191,8 @@ class ConnectionManager:
             member["muted"] = muted
         if isinstance(deafened, bool):
             member["deafened"] = deafened
+        if isinstance(screen_sharing, bool):
+            member["screen_sharing"] = screen_sharing
         return dict(member)
 
     def get_joined_voice_member(self, websocket: WebSocket, user_id: str) -> dict[str, Any] | None:
@@ -194,6 +206,25 @@ class ConnectionManager:
         if member is None:
             return None
         return dict(member)
+
+    def get_voice_snapshots_for_server(self, server_id: str) -> list[dict[str, Any]]:
+        snapshots: list[dict[str, Any]] = []
+        for channel_id, members in self._voice_members.items():
+            participants = [
+                dict(member)
+                for member in members.values()
+                if isinstance(member.get("server_id"), str) and member.get("server_id") == server_id
+            ]
+            if not participants:
+                continue
+            snapshots.append(
+                {
+                    "channel_id": channel_id,
+                    "server_id": server_id,
+                    "participants": participants,
+                }
+            )
+        return snapshots
 
     def _user_has_other_voice_socket_in_channel(self, user_id: str, channel_id: str) -> bool:
         for socket, socket_channel_id in self._socket_voice_channel.items():
@@ -235,6 +266,7 @@ class ConnectionManager:
             "avatar_url": member.get("avatar_url"),
             "muted": bool(member.get("muted", False)),
             "deafened": bool(member.get("deafened", False)),
+            "screen_sharing": bool(member.get("screen_sharing", False)),
         }
 
     async def _fanout(self, sockets: set[WebSocket], payload: dict[str, Any], *, exclude: set[WebSocket] | None = None) -> None:

@@ -125,13 +125,14 @@ async def websocket_gateway(websocket: WebSocket):
         rate_limiter.clear(websocket)
         left_member = await manager.disconnect(user_id, websocket)
         if left_member is not None:
-            await manager.publish_voice(
-                left_member["channel_id"],
-                {
-                    "op": "DISPATCH",
-                    "t": GatewayEventType.VOICE_USER_LEFT.value,
-                    "d": left_member,
-                },
-            )
+            left_payload = {
+                "op": "DISPATCH",
+                "t": GatewayEventType.VOICE_USER_LEFT.value,
+                "d": left_member,
+            }
+            await manager.publish_voice(left_member["channel_id"], left_payload)
+            left_server_id = left_member.get("server_id")
+            if isinstance(left_server_id, str):
+                await manager.publish_server(left_server_id, left_payload)
 
 
