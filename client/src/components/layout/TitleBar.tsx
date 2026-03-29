@@ -4,6 +4,8 @@ import { useLocation } from "react-router-dom";
 
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/i18n/provider";
+import { useChannelStore } from "@/store/channelStore";
+import { useServerStore } from "@/store/serverStore";
 import rucordLogo from "../../../animal.png";
 
 interface WindowControlButtonProps {
@@ -30,6 +32,10 @@ const WindowControlButton = ({ title, onClick, children, danger = false }: Windo
 export const TitleBar = () => {
   const location = useLocation();
   const { t } = useI18n();
+  const servers = useServerStore((state) => state.servers);
+  const activeServerId = useServerStore((state) => state.activeServerId);
+  const channels = useChannelStore((state) => state.channels);
+  const activeChannelId = useChannelStore((state) => state.activeChannelId);
   const isMac = useMemo(() => {
     const bridgePlatform = typeof window !== "undefined" && "pawcord" in window ? window.pawcord.system.platform : "";
     if (bridgePlatform) {
@@ -41,13 +47,17 @@ export const TitleBar = () => {
 
   const sectionTitle = useMemo(() => {
     if (location.pathname.startsWith("/app/server/")) {
-      return "Server";
+      const routeServerId = location.pathname.replace("/app/server/", "");
+      const currentServer = servers.find((item) => item.id === routeServerId) ?? servers.find((item) => item.id === activeServerId) ?? null;
+      const currentChannel = channels.find((item) => item.id === activeChannelId) ?? null;
+      const serverLabel = currentServer?.name ?? "Server";
+      return currentChannel?.name ? `${serverLabel} / #${currentChannel.name}` : serverLabel;
     }
     if (location.pathname.startsWith("/app/settings")) {
       return t("settings.title");
     }
     return t("home.header_friends");
-  }, [location.pathname, t]);
+  }, [activeChannelId, activeServerId, channels, location.pathname, servers, t]);
 
   return (
     <header

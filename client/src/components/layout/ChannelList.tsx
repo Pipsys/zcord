@@ -126,10 +126,12 @@ export const ChannelList = ({
     const channelParticipants = voiceParticipantsByChannel[channel.id] ?? [];
 
     return (
-      <div key={channel.id} className="rounded">
+      <div key={channel.id} className="rounded-lg">
         <div
-          className={`flex items-center gap-2 rounded px-2 py-1.5 text-[14px] ${
-            active ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/60"
+          className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[14px] transition-all duration-150 ${
+            active
+              ? "bg-paw-bg-elevated text-paw-text-primary shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+              : "text-paw-text-muted hover:bg-paw-bg-elevated/70 hover:text-paw-text-secondary"
           }`}
         >
           <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setActiveChannel(channel.id)}>
@@ -140,7 +142,9 @@ export const ChannelList = ({
           </button>
 
           <button
-            className={`rounded px-2 py-0.5 text-xs font-medium ${connected ? "bg-[#3ba55d] text-white" : "bg-white/10 text-paw-text-secondary"}`}
+            className={`rounded-md px-2 py-0.5 text-xs font-medium transition-colors ${
+              connected ? "bg-[#3ba55d] text-white hover:bg-[#43b967]" : "bg-white/10 text-paw-text-secondary hover:bg-white/15 hover:text-white"
+            }`}
             onClick={() => {
               if (connected) {
                 onLeaveVoice();
@@ -159,7 +163,10 @@ export const ChannelList = ({
               const isSelf = participant.user_id === effectiveUser?.id;
               const name = toParticipantName(participant, effectiveUser?.id ?? null, effectiveUser?.username ?? null);
               return (
-                <div key={`${channel.id}-${participant.user_id}`} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs text-paw-text-secondary">
+                <div
+                  key={`${channel.id}-${participant.user_id}`}
+                  className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-paw-text-secondary transition-colors hover:bg-white/5"
+                >
                   <Avatar src={participant.avatar_url ?? null} label={name} size="sm" online={!participant.deafened} />
                   <span className="min-w-0 flex-1 truncate">
                     {name}
@@ -243,8 +250,10 @@ export const ChannelList = ({
                     setContext({ visible: true, x: event.clientX, y: event.clientY, channelId: channel.id });
                   }}
                   onClick={() => setActiveChannel(channel.id)}
-                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[15px] transition ${
-                    active ? "bg-paw-bg-elevated text-paw-text-primary" : "text-paw-text-muted hover:bg-paw-bg-elevated/60 hover:text-paw-text-secondary"
+                  className={`group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[15px] transition-all duration-150 ${
+                    active
+                      ? "bg-paw-bg-elevated text-paw-text-primary shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                      : "text-paw-text-muted hover:bg-paw-bg-elevated/70 hover:text-paw-text-secondary hover:translate-x-[1px]"
                   }`}
                 >
                   <span className="text-paw-text-muted">

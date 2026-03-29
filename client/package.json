@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc -p tsconfig.electron.json",
-    "electron:dev": "concurrently \"tsc -p tsconfig.electron.json --watch\" \"vite\" \"wait-on http://localhost:5173 dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "electron:main:build": "tsc -p tsconfig.electron.json",
+    "electron:main:watch": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
+    "electron:dev": "npm run electron:main:build && concurrently \"npm run electron:main:watch\" \"vite\" \"wait-on http://localhost:5173 dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "electron:dev:remote": "cross-env BACKEND_API_URL=https://api.pawcord.ru/api/v1 BACKEND_PUBLIC_ORIGIN=https://pawcord.ru MEDIA_PUBLIC_ORIGIN=https://pawcord.ru VITE_WS_URL=wss://api.pawcord.ru/ws/gateway npm run electron:dev",
     "electron:build": "npm run build && electron-builder",
     "electron:build:mac": "npm run build && electron-builder --mac dmg --publish never",

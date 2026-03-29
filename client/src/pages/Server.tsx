@@ -585,10 +585,28 @@ const ServerPage = () => {
       />
 
       <section className="flex min-w-0 flex-1 flex-col bg-paw-bg-primary">
-        <header className="flex h-12 items-center border-b border-white/10 bg-black/20 px-4">
-          <div className="flex items-center gap-2">
-            <span className="text-lg text-paw-text-muted">#</span>
-            <h3 className="text-[15px] font-semibold text-paw-text-secondary">{activeChannel?.name ?? t("server.no_channel_selected")}</h3>
+        <header className="flex h-14 items-center justify-between border-b border-white/10 bg-[#0f131b]/95 px-4">
+          <div className="min-w-0 flex items-center gap-3">
+            <Avatar src={currentServer?.icon_url ?? null} label={currentServer?.name ?? "server"} size="sm" />
+            <div className="min-w-0">
+              <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-paw-text-muted">{currentServer?.name ?? "Server"}</p>
+              <p className="truncate text-sm font-semibold text-paw-text-secondary">
+                <span className="text-paw-text-muted"># </span>
+                {activeChannel?.name ?? t("server.no_channel_selected")}
+              </p>
+            </div>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-2">
+            <span
+              className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                activeChannel?.type === "voice"
+                  ? "border-[#3ba55d]/45 bg-[#3ba55d]/15 text-[#9cf5ba]"
+                  : "border-white/10 bg-black/25 text-paw-text-muted"
+              }`}
+            >
+              {activeChannel?.type === "voice" ? "Voice" : "Text"}
+            </span>
           </div>
         </header>
 
@@ -621,6 +639,7 @@ const ServerPage = () => {
           {activeChannel?.type === "voice" ? (
             <Suspense fallback={<div className="p-4 text-sm text-paw-text-muted">{t("server.loading_voice")}</div>}>
               <VoiceChannel
+                serverName={currentServer?.name ?? null}
                 channelId={activeChannel.id}
                 channelName={activeChannelName}
                 connected={voiceRoom.connectedChannelId === activeChannel.id}

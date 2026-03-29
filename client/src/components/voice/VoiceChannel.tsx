@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { clsx } from "clsx";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { VoiceControls } from "@/components/voice/VoiceControls";
@@ -8,6 +9,7 @@ import { useAuthStore } from "@/store/authStore";
 import type { VoiceParticipant } from "@/store/voiceStore";
 
 interface VoiceChannelProps {
+  serverName: string | null;
   channelId: string | null;
   channelName: string | null;
   connected: boolean;
@@ -46,6 +48,7 @@ const toParticipantName = (participant: VoiceParticipant, currentUserId: string 
 };
 
 export const VoiceChannel = ({
+  serverName,
   channelId,
   channelName,
   connected,
@@ -144,6 +147,45 @@ export const VoiceChannel = ({
     }
     return resolveScreenStream(fullscreenUserId);
   }, [fullscreenUserId, remoteScreenStreams, user?.id, localScreenStream]);
+
+  const participantTiles = useMemo(() => {
+    return visibleParticipants.map((participant) => {
+      const name = toParticipantName(participant, user?.id ?? null, user?.username ?? null);
+      const isCurrentUser = participant.user_id === user?.id;
+      const isSpeaking = speakingSet.has(participant.user_id);
+      const screenStream = resolveScreenStream(participant.user_id);
+      const isSharingScreen = Boolean(participant.screen_sharing || (isCurrentUser && screenSharing) || screenStream);
+      const avatarSource = isCurrentUser ? participant.avatar_url ?? user?.avatar_url ?? null : participant.avatar_url ?? null;
+
+      return {
+        participant,
+        name,
+        isCurrentUser,
+        isSpeaking,
+        screenStream,
+        isSharingScreen,
+        avatarSource,
+      };
+    });
+  }, [resolveScreenStream, screenSharing, speakingSet, user?.avatar_url, user?.id, user?.username, visibleParticipants]);
+
+  const resolveGridClass = (count: number): string => {
+    if (count <= 1) {
+      return "grid-cols-1";
+    }
+    if (count === 2) {
+      return "grid-cols-1 md:grid-cols-2";
+    }
+    if (count <= 4) {
+      return "grid-cols-1 sm:grid-cols-2";
+    }
+    return "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
+  };
+
+  const tileGridClass = useMemo(() => resolveGridClass(participantTiles.length), [participantTiles.length]);
+  const screenShareTiles = useMemo(() => participantTiles.filter((tile) => Boolean(tile.screenStream)), [participantTiles]);
+  const regularVoiceTiles = useMemo(() => participantTiles.filter((tile) => !tile.screenStream), [participantTiles]);
+  const regularGridClass = useMemo(() => resolveGridClass(regularVoiceTiles.length), [regularVoiceTiles.length]);
 
   useEffect(() => {
     for (const participant of visibleParticipants) {
@@ -380,84 +422,143 @@ export const VoiceChannel = ({
   }, []);
 
   return (
-    <section className="m-4 rounded-xl border border-white/10 bg-black/20 p-4 shadow-[0_10px_22px_rgba(0,0,0,0.32)]">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-paw-text-muted">{t("voice.title")}</h3>
-        <span className={`rounded-md border border-white/10 px-2 py-1 text-xs font-semibold ${connected ? "bg-[#3ba55d] text-white" : "bg-black/25 text-paw-text-muted"}`}>
-          {connected ? t("voice.connected") : t("voice.not_connected")}
-        </span>
-      </div>
-
-      <p className="mb-3 text-sm text-paw-text-secondary">{channelName ? `#${channelName}` : t("server.voice_panel_hint")}</p>
-
-      {connected ? (
-        <div className="mb-4 space-y-2">
-          {visibleParticipants.map((participant) => {
-            const name = toParticipantName(participant, user?.id ?? null, user?.username ?? null);
-            const isCurrentUser = participant.user_id === user?.id;
-            const isSpeaking = speakingSet.has(participant.user_id);
-            const isSharingScreen = Boolean(participant.screen_sharing || (isCurrentUser && screenSharing));
-            const avatarSource = isCurrentUser ? participant.avatar_url ?? user?.avatar_url ?? null : participant.avatar_url ?? null;
-
-            return (
-              <div
-                key={participant.user_id}
-                className={`flex items-center gap-2 rounded-lg border bg-black/20 px-3 py-2 ${
-                  isSpeaking ? "border-[#43b581]/80 shadow-[0_0_0_1px_rgba(67,181,129,0.28)]" : "border-white/10"
-                }`}
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0b0d13]">
+      <div className="min-h-0 flex-1 p-3">
+        {!connected ? (
+          <div className="grid h-full place-items-center rounded-xl border border-white/10 bg-[#0f1218]">
+            <div className="text-center">
+              <p className="mb-2 text-sm text-paw-text-secondary">{t("server.voice_panel_hint")}</p>
+              <button
+                disabled={!channelId}
+                className="rounded-md border border-white/10 bg-paw-accent px-3 py-2 text-sm font-semibold text-white shadow-[0_6px_18px_var(--color-accent-glow)] transition-colors hover:bg-paw-accentSecondary disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={onConnect}
               >
-                <Avatar src={avatarSource} label={name} online={!participant.deafened} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-paw-text-secondary">{name}</p>
-                  <p className="text-xs text-paw-text-muted">
-                    {participant.muted ? t("voice.mute") : t("voice.connected")}
-                    {participant.deafened ? ` | ${t("voice.deafen")}` : ""}
-                    {isSpeaking ? ` | ${t("voice.speaking")}` : ""}
-                    {isSharingScreen ? ` | ${t("voice.live_badge")}` : ""}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+                {t("voice.connect")}
+              </button>
+            </div>
+          </div>
+        ) : participantTiles.length === 0 ? (
+          <div className="grid h-full place-items-center rounded-xl border border-white/10 bg-[#0f1218]">
+            <p className="text-sm text-paw-text-muted">{t("voice.no_participants")}</p>
+          </div>
+        ) : screenShareTiles.length > 0 ? (
+          <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+            <div
+              className={clsx(
+                "grid gap-3",
+                screenShareTiles.length === 1 ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2",
+              )}
+            >
+              {screenShareTiles.map(({ participant, name, isCurrentUser, isSpeaking, isSharingScreen, avatarSource }) => (
+                <article
+                  key={participant.user_id}
+                  className={clsx(
+                    "group relative min-h-[260px] overflow-hidden rounded-2xl border bg-[#0a0c10] md:min-h-[320px] xl:min-h-[360px]",
+                    isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
+                  )}
+                >
+                  <video
+                    ref={(element) => {
+                      videoRefs.current[participant.user_id] = element;
+                    }}
+                    autoPlay
+                    playsInline
+                    muted={isCurrentUser}
+                    className="h-full w-full bg-black object-contain"
+                  />
 
-          {visibleParticipants.length === 0 ? (
-            <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-sm text-paw-text-muted">{t("voice.no_participants")}</div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="mb-4 rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-sm text-paw-text-muted">{t("voice.no_participants")}</div>
-      )}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
 
-      {connected && screenParticipants.length > 0 ? (
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {screenParticipants.map((participant) => {
-            const name = toParticipantName(participant, user?.id ?? null, user?.username ?? null);
-            const isCurrentUser = participant.user_id === user?.id;
-            return (
-              <div key={`screen-${participant.user_id}`} className="overflow-hidden rounded-lg border border-white/10 bg-black/30">
-                <div className="flex items-center justify-between border-b border-white/10 px-2.5 py-2">
-                  <span className="truncate text-xs font-semibold text-paw-text-secondary">{name}</span>
+                  <div className="absolute bottom-2 left-2 rounded-md bg-black/55 px-2 py-1 text-xs font-semibold text-white">{name}</div>
+
+                  {isSharingScreen ? (
+                    <div className="absolute right-2 top-2 rounded-full border border-red-400/40 bg-red-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      {t("voice.live_badge")}
+                    </div>
+                  ) : null}
+
                   <button
                     onClick={() => setFullscreenUserId(participant.user_id)}
-                    className="rounded border border-white/12 bg-black/25 px-2 py-1 text-[11px] font-semibold text-paw-text-secondary hover:text-paw-text-primary"
+                    className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-100 transition hover:bg-black/70"
                   >
                     {t("voice.expand_stream")}
                   </button>
-                </div>
-                <video
-                  ref={(element) => {
-                    videoRefs.current[participant.user_id] = element;
-                  }}
-                  autoPlay
-                  playsInline
-                  muted={isCurrentUser}
-                  className="block h-[220px] w-full bg-black object-contain"
-                />
+                </article>
+              ))}
+            </div>
+
+            {regularVoiceTiles.length > 0 ? (
+              <div className={clsx("grid auto-rows-fr gap-3", regularGridClass)}>
+                {regularVoiceTiles.map(({ participant, name, isSpeaking, avatarSource }) => (
+                  <article
+                    key={participant.user_id}
+                    className={clsx(
+                      "relative min-h-[160px] overflow-hidden rounded-2xl border bg-[#141821] transition-all duration-200",
+                      isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
+                    )}
+                  >
+                    <div className="relative grid h-full w-full place-items-center bg-gradient-to-br from-[#1d2330] via-[#202532] to-[#181c27]">
+                      <div className={clsx("rounded-full p-1.5", isSpeaking ? "ring-2 ring-[#43b581]" : "ring-1 ring-white/15")}>
+                        <Avatar src={avatarSource} label={name} online={!participant.deafened} size="lg" />
+                      </div>
+                    </div>
+                    <div className="absolute bottom-2 left-2 rounded-md bg-black/55 px-2 py-1 text-xs font-semibold text-white">{name}</div>
+                  </article>
+                ))}
               </div>
-            );
-          })}
-        </div>
-      ) : null}
+            ) : null}
+          </div>
+        ) : (
+          <div className={clsx("grid h-full min-h-0 auto-rows-fr gap-3", tileGridClass)}>
+            {participantTiles.map(({ participant, name, isCurrentUser, isSpeaking, isSharingScreen, avatarSource, screenStream }) => (
+              <article
+                key={participant.user_id}
+                className={clsx(
+                  "group relative min-h-[180px] overflow-hidden rounded-2xl border bg-[#141821] transition-all duration-200",
+                  isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
+                )}
+              >
+                {screenStream ? (
+                  <video
+                    ref={(element) => {
+                      videoRefs.current[participant.user_id] = element;
+                    }}
+                    autoPlay
+                    playsInline
+                    muted={isCurrentUser}
+                    className="h-full w-full bg-black object-contain"
+                  />
+                ) : (
+                  <div className="relative grid h-full w-full place-items-center bg-gradient-to-br from-[#1d2330] via-[#202532] to-[#181c27]">
+                    <div className={clsx("rounded-full p-1.5", isSpeaking ? "ring-2 ring-[#43b581]" : "ring-1 ring-white/15")}>
+                      <Avatar src={avatarSource} label={name} online={!participant.deafened} size="lg" />
+                    </div>
+                  </div>
+                )}
+
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
+
+                <div className="absolute bottom-2 left-2 rounded-md bg-black/55 px-2 py-1 text-xs font-semibold text-white">{name}</div>
+
+                {isSharingScreen ? (
+                  <div className="absolute right-2 top-2 rounded-full border border-red-400/40 bg-red-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    {t("voice.live_badge")}
+                  </div>
+                ) : null}
+
+                {screenStream ? (
+                  <button
+                    onClick={() => setFullscreenUserId(participant.user_id)}
+                    className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
+                  >
+                    {t("voice.expand_stream")}
+                  </button>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
 
       {connected
         ? visibleParticipants
@@ -475,47 +576,37 @@ export const VoiceChannel = ({
             ))
         : null}
 
-      <div className="mb-3">
-        {!connected ? (
-          <button
-            disabled={!channelId}
-            className="rounded-md border border-white/10 bg-paw-accent px-3 py-2 text-sm font-semibold text-white shadow-[0_6px_18px_var(--color-accent-glow)] transition-colors hover:bg-paw-accentSecondary disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={onConnect}
-          >
-            {t("voice.connect")}
-          </button>
-        ) : null}
+      <div className="shrink-0 border-t border-white/10 bg-[#10131a] p-3">
+        <VoiceControls
+          muted={muted}
+          deafened={deafened}
+          connected={connected}
+          screenSharing={screenSharing}
+          inputDevices={inputDevices}
+          selectedInputDeviceId={selectedInputDeviceId}
+          screenSources={screenSources}
+          selectedScreenSourceId={selectedScreenSourceId}
+          onToggleMute={onToggleMute}
+          onToggleDeafen={onToggleDeafen}
+          onToggleScreenShare={onToggleScreenShare}
+          onLeave={onLeave}
+          onVolumeChange={onVolumeChange}
+          onInputDeviceChange={onInputDeviceChange}
+          onRefreshScreenSources={onRefreshScreenSources}
+          onScreenSourceChange={onScreenSourceChange}
+        />
       </div>
 
-      <VoiceControls
-        muted={muted}
-        deafened={deafened}
-        connected={connected}
-        screenSharing={screenSharing}
-        inputDevices={inputDevices}
-        selectedInputDeviceId={selectedInputDeviceId}
-        screenSources={screenSources}
-        selectedScreenSourceId={selectedScreenSourceId}
-        onToggleMute={onToggleMute}
-        onToggleDeafen={onToggleDeafen}
-        onToggleScreenShare={onToggleScreenShare}
-        onLeave={onLeave}
-        onVolumeChange={onVolumeChange}
-        onInputDeviceChange={onInputDeviceChange}
-        onRefreshScreenSources={onRefreshScreenSources}
-        onScreenSourceChange={onScreenSourceChange}
-      />
-
       {fullscreenUserId && fullscreenStream ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/95 p-4" onClick={() => setFullscreenUserId(null)}>
-          <div className="relative h-full w-full max-w-[1600px]" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/95 p-3" onClick={() => setFullscreenUserId(null)}>
+          <div className="relative h-full w-full max-w-[1800px]" onClick={(event) => event.stopPropagation()}>
             <button
               className="absolute right-3 top-3 z-10 rounded-md border border-white/15 bg-black/50 px-3 py-1.5 text-xs font-semibold text-white"
               onClick={() => setFullscreenUserId(null)}
             >
               {t("voice.fullscreen_close")}
             </button>
-            <video ref={fullscreenVideoRef} autoPlay playsInline className="h-full w-full bg-black object-contain" />
+            <video ref={fullscreenVideoRef} autoPlay playsInline className="h-full w-full rounded-lg bg-black object-contain" />
           </div>
         </div>
       ) : null}

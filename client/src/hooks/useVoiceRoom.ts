@@ -37,7 +37,7 @@ interface UseVoiceRoomResult {
   toggleScreenShare: () => Promise<boolean>;
   setVolume: (value: number) => void;
   setInputDevice: (deviceId: string) => Promise<boolean>;
-  refreshScreenSources: () => Promise<void>;
+  refreshScreenSources: () => Promise<ScreenShareSource[]>;
   setScreenSource: (sourceId: string) => Promise<boolean>;
 }
 
@@ -79,6 +79,11 @@ const ICE_SERVERS = buildIceServers();
 const DEFAULT_INPUT_DEVICE_ID = "__system_default__";
 const DEFAULT_SCREEN_SOURCE_ID = "__auto__";
 const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
+
+const isMissingIpcHandlerError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("No handler registered for");
+};
 
 const stringifyVoicePayload = (payload: unknown): string => {
   try {
@@ -291,11 +296,11 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
   }, [selectedInputDeviceId]);
 
-  const refreshScreenSources = useCallback(async () => {
+  const refreshScreenSources = useCallback(async (): Promise<ScreenShareSource[]> => {
     if (!window.pawcord?.media?.listScreenSources) {
       setScreenSources([]);
       setSelectedScreenSourceId(DEFAULT_SCREEN_SOURCE_ID);
-      return;
+      return [];
     }
 
     try {
@@ -316,9 +321,16 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           setSelectedScreenSourceId(DEFAULT_SCREEN_SOURCE_ID);
         }
       }
-    } catch {
+      return normalized;
+    } catch (error) {
+      if (isMissingIpcHandlerError(error)) {
+        // Fallback mode: the main process doesn't expose screen source IPC yet.
+        voiceWarn("screen source listing skipped: ipc handler is missing");
+        return [];
+      }
       setScreenSources([]);
       setSelectedScreenSourceId(DEFAULT_SCREEN_SOURCE_ID);
+      return [];
     }
   }, [selectedScreenSourceId]);
 
@@ -333,7 +345,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     try {
       await window.pawcord.media.selectScreenSource(normalized === DEFAULT_SCREEN_SOURCE_ID ? null : normalized);
       return true;
-    } catch {
+    } catch (error) {
+      if (isMissingIpcHandlerError(error)) {
+        // Fallback mode: proceed with native getDisplayMedia picker.
+        voiceWarn("screen source selection skipped: ipc handler is missing", { sourceId: normalized });
+        return true;
+      }
       return false;
     }
   }, []);
@@ -799,9 +816,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       return false;
     }
 
-    await refreshScreenSources();
+    const availableSources = await refreshScreenSources();
     const preferredSourceId =
-      selectedScreenSourceId !== DEFAULT_SCREEN_SOURCE_ID && screenSources.some((source) => source.id === selectedScreenSourceId)
+      selectedScreenSourceId !== DEFAULT_SCREEN_SOURCE_ID && availableSources.some((source) => source.id === selectedScreenSourceId)
         ? selectedScreenSourceId
         : DEFAULT_SCREEN_SOURCE_ID;
     const selected = await setScreenSource(preferredSourceId);
@@ -810,17 +827,57 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       return false;
     }
 
-    let screenStream: MediaStream;
-    try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({
+    const captureAttempts: DisplayMediaStreamOptions[] = [
+      {
         video: {
           frameRate: { ideal: 30, max: 60 },
         },
         audio: false,
-      });
-    } catch (error) {
+      },
+      {
+        video: true,
+        audio: false,
+      },
+    ];
+    let screenStream: MediaStream | null = null;
+    let lastError: unknown = null;
+
+    for (const constraints of captureAttempts) {
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+        break;
+      } catch (error) {
+        lastError = error;
+        voiceWarn("screen share start attempt failed", {
+          error: error instanceof Error ? error.message : String(error),
+          constraints,
+          sourceId: preferredSourceId,
+        });
+      }
+    }
+
+    if (!screenStream && preferredSourceId !== DEFAULT_SCREEN_SOURCE_ID) {
+      const fallbackSelected = await setScreenSource(DEFAULT_SCREEN_SOURCE_ID);
+      if (fallbackSelected) {
+        for (const constraints of captureAttempts) {
+          try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+            break;
+          } catch (error) {
+            lastError = error;
+            voiceWarn("screen share fallback attempt failed", {
+              error: error instanceof Error ? error.message : String(error),
+              constraints,
+              sourceId: DEFAULT_SCREEN_SOURCE_ID,
+            });
+          }
+        }
+      }
+    }
+
+    if (!screenStream) {
       voiceWarn("screen share start failed", {
-        error: error instanceof Error ? error.message : String(error),
+        error: lastError instanceof Error ? lastError.message : String(lastError),
       });
       return false;
     }
@@ -859,7 +916,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     return true;
-  }, [closePeer, refreshScreenSources, renegotiatePeer, screenSources, selectedScreenSourceId, setScreenSource, stopScreenShare]);
+  }, [closePeer, refreshScreenSources, renegotiatePeer, selectedScreenSourceId, setScreenSource, stopScreenShare]);
 
   const setVolume = useCallback((value: number) => {
     const next = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
