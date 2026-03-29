@@ -754,13 +754,28 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       const screenAudioTrack = localScreenAudioTrackRef.current;
       const screenStream = localScreenStreamRef.current;
       if (screenTrack && screenStream) {
-        const senders: ScreenShareSenders = {
-          video: peer.addTrack(screenTrack, screenStream),
-        };
-        if (screenAudioTrack && screenAudioTrack.readyState === "live") {
-          senders.audio = peer.addTrack(screenAudioTrack, screenStream);
+        const senders: ScreenShareSenders = {};
+        try {
+          senders.video = peer.addTrack(screenTrack, screenStream);
+        } catch (error) {
+          voiceWarn("failed to attach screen video track to peer", {
+            remoteUserId,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
-        screenSendersRef.current.set(remoteUserId, senders);
+        if (screenAudioTrack && screenAudioTrack.readyState === "live") {
+          try {
+            senders.audio = peer.addTrack(screenAudioTrack, screenStream);
+          } catch (error) {
+            voiceWarn("failed to attach screen audio track to peer", {
+              remoteUserId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        if (senders.video || senders.audio) {
+          screenSendersRef.current.set(remoteUserId, senders);
+        }
       }
 
       peer.onicecandidate = (event) => {
@@ -777,10 +792,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       };
 
       peer.ontrack = (event) => {
-        const [stream] = event.streams;
-        if (!stream) {
-          return;
-        }
+        const stream = event.streams[0] ?? new MediaStream([event.track]);
         if (event.track.kind === "video") {
           voiceLog("remote screen track received", {
             remoteUserId,
@@ -1160,22 +1172,34 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     for (const [remoteUserId, peer] of peersRef.current.entries()) {
+      let videoSender: RTCRtpSender | undefined;
       try {
-        const senders: ScreenShareSenders = {
-          video: peer.addTrack(screenTrack, screenStream),
-        };
-        if (screenAudioTrack && screenAudioTrack.readyState === "live") {
-          senders.audio = peer.addTrack(screenAudioTrack, screenStream);
-        }
-        screenSendersRef.current.set(remoteUserId, senders);
-        await renegotiatePeer(remoteUserId);
-      } catch {
-        closePeer(remoteUserId);
+        videoSender = peer.addTrack(screenTrack, screenStream);
+      } catch (error) {
+        voiceWarn("failed to add screen video track", {
+          remoteUserId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
       }
+
+      const senders: ScreenShareSenders = { video: videoSender };
+      if (screenAudioTrack && screenAudioTrack.readyState === "live") {
+        try {
+          senders.audio = peer.addTrack(screenAudioTrack, screenStream);
+        } catch (error) {
+          voiceWarn("failed to add screen audio track", {
+            remoteUserId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      screenSendersRef.current.set(remoteUserId, senders);
+      await renegotiatePeer(remoteUserId);
     }
 
     return true;
-  }, [closePeer, refreshScreenSources, renegotiatePeer, selectedScreenSourceId, setScreenSource, stopScreenShare]);
+  }, [refreshScreenSources, renegotiatePeer, selectedScreenSourceId, setScreenSource, stopScreenShare]);
 
   const setVolume = useCallback((value: number) => {
     const next = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
