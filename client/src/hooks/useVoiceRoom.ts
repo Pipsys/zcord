@@ -84,7 +84,6 @@ const DEFAULT_SCREEN_SOURCE_ID = "__auto__";
 const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
 const ICE_RESTART_MAX_ATTEMPTS = 2;
 const SCREEN_SHARE_TARGET_FPS = 60;
-const SCREEN_SHARE_MIN_FPS = 30;
 const DEFAULT_JOIN_SOUND_PATH = "sounds/voice-join.wav";
 const DEFAULT_LEAVE_SOUND_PATH = "sounds/voice-leave.wav";
 const PRESENCE_SOUND_VOLUME_RAW = Number(import.meta.env.VITE_VOICE_PRESENCE_SOUND_VOLUME);
@@ -157,7 +156,6 @@ const optimizeScreenTrackForStreaming = async (track: MediaStreamTrack): Promise
   try {
     await track.applyConstraints({
       frameRate: {
-        min: SCREEN_SHARE_MIN_FPS,
         ideal: SCREEN_SHARE_TARGET_FPS,
         max: SCREEN_SHARE_TARGET_FPS,
       },
@@ -1254,16 +1252,6 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     const captureAttempts: DisplayMediaStreamOptions[] = [
-      {
-        video: {
-          frameRate: {
-            min: SCREEN_SHARE_MIN_FPS,
-            ideal: SCREEN_SHARE_TARGET_FPS,
-            max: SCREEN_SHARE_TARGET_FPS,
-          },
-        },
-        audio: true,
-      },
       {
         video: {
           frameRate: {
