@@ -930,6 +930,36 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       peer.ontrack = (event) => {
         const stream = event.streams[0] ?? new MediaStream([event.track]);
+        const attachRemoteAudioTrack = (audioTrack: MediaStreamTrack) => {
+          setRemoteStreams((current) => {
+            const existing = current[remoteUserId];
+            const mergedStream = existing ?? new MediaStream();
+            const alreadyAdded = mergedStream.getAudioTracks().some((track) => track.id === audioTrack.id);
+            if (!alreadyAdded) {
+              mergedStream.addTrack(audioTrack);
+            }
+            return { ...current, [remoteUserId]: mergedStream };
+          });
+
+          audioTrack.addEventListener("ended", () => {
+            setRemoteStreams((current) => {
+              const existing = current[remoteUserId];
+              if (!existing) {
+                return current;
+              }
+              const nextStream = new MediaStream(
+                existing.getAudioTracks().filter((track) => track.id !== audioTrack.id),
+              );
+              if (nextStream.getAudioTracks().length === 0) {
+                const next = { ...current };
+                delete next[remoteUserId];
+                return next;
+              }
+              return { ...current, [remoteUserId]: nextStream };
+            });
+          });
+        };
+
         if (event.track.kind === "video") {
           voiceLog("remote screen track received", {
             remoteUserId,
@@ -937,6 +967,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
             streamId: stream.id,
           });
           setRemoteScreenStreams((current) => ({ ...current, [remoteUserId]: stream }));
+          for (const audioTrack of stream.getAudioTracks()) {
+            attachRemoteAudioTrack(audioTrack);
+          }
           event.track.addEventListener("ended", () => {
             setRemoteScreenStreams((current) => {
               const existing = current[remoteUserId];
@@ -972,32 +1005,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           trackId: event.track.id,
           streamId: stream.id,
         });
-        setRemoteStreams((current) => {
-          const existing = current[remoteUserId];
-          const mergedStream = existing ?? new MediaStream();
-          const alreadyAdded = mergedStream.getAudioTracks().some((track) => track.id === event.track.id);
-          if (!alreadyAdded) {
-            mergedStream.addTrack(event.track);
-          }
-          return { ...current, [remoteUserId]: mergedStream };
-        });
-        event.track.addEventListener("ended", () => {
-          setRemoteStreams((current) => {
-            const existing = current[remoteUserId];
-            if (!existing) {
-              return current;
-            }
-            const nextStream = new MediaStream(
-              existing.getAudioTracks().filter((track) => track.id !== event.track.id),
-            );
-            if (nextStream.getAudioTracks().length === 0) {
-              const next = { ...current };
-              delete next[remoteUserId];
-              return next;
-            }
-            return { ...current, [remoteUserId]: nextStream };
-          });
-        });
+        attachRemoteAudioTrack(event.track);
       };
 
       peer.onconnectionstatechange = () => {
