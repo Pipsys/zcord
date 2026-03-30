@@ -267,6 +267,8 @@ const ru = {
   "voice.screen_picker_start": "Начать трансляцию",
   "voice.screen_picker_starting": "Запуск...",
   "voice.expand_stream": "Развернуть",
+  "voice.join_stream": "Присоединиться к трансляции",
+  "voice.stream_connecting": "Подключение...",
   "voice.fullscreen_close": "Закрыть",
 
   "settings.title": "Настройки",
@@ -577,6 +579,8 @@ const en: MessageCatalog = {
   "voice.screen_picker_start": "Start streaming",
   "voice.screen_picker_starting": "Starting...",
   "voice.expand_stream": "Expand",
+  "voice.join_stream": "Join stream",
+  "voice.stream_connecting": "Connecting...",
   "voice.fullscreen_close": "Close",
 
   "settings.title": "Settings",

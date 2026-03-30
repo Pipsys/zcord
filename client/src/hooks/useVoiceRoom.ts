@@ -238,6 +238,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const iceRestartTimersRef = useRef<Map<string, number>>(new Map());
   const screenRecoveryAttemptsRef = useRef<Map<string, number>>(new Map());
   const screenRecoveryCountersRef = useRef<Map<string, number>>(new Map());
+  const peerCreationBackoffUntilRef = useRef<number>(0);
   const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
   const lastRejoinSocketRef = useRef<WebSocket | null>(null);
@@ -663,6 +664,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     pendingIceRestartRef.current.delete(remoteUserId);
     iceRestartAttemptsRef.current.delete(remoteUserId);
     screenRecoveryAttemptsRef.current.delete(remoteUserId);
+    screenRecoveryCountersRef.current.delete(remoteUserId);
     setRemoteStreams((current) => {
       const next = { ...current };
       delete next[remoteUserId];
@@ -853,7 +855,16 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   }, []);
 
   const createPeerConnection = useCallback(
-    (remoteUserId: string, channelId: string, serverId: string | null): RTCPeerConnection => {
+    (remoteUserId: string, channelId: string, serverId: string | null): RTCPeerConnection | null => {
+      const now = Date.now();
+      if (peerCreationBackoffUntilRef.current > now) {
+        voiceWarn("peer creation skipped due to backoff", {
+          remoteUserId,
+          waitMs: peerCreationBackoffUntilRef.current - now,
+        });
+        return null;
+      }
+
       const existing = peersRef.current.get(remoteUserId);
       if (existing) {
         const existingState = existing.connectionState;
@@ -876,7 +887,18 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         serverId,
         iceServers: ICE_SERVERS,
       });
-      const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      let peer: RTCPeerConnection;
+      try {
+        peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      } catch (error) {
+        peerCreationBackoffUntilRef.current = Date.now() + 5_000;
+        voiceWarn("failed to create peer", {
+          remoteUserId,
+          error: error instanceof Error ? error.message : String(error),
+          backoffMs: 5000,
+        });
+        return null;
+      }
       peerMetaRef.current.set(remoteUserId, { channelId, serverId });
 
       const localStream = localStreamRef.current;
@@ -1097,15 +1119,23 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       const forceReset = Boolean(options?.forceReset);
       const existingPeer = peersRef.current.get(remoteUserId);
+      const hadExistingPeer = Boolean(existingPeer);
       if (forceReset && existingPeer) {
         closePeer(remoteUserId);
       }
 
       const peer = createPeerConnection(remoteUserId, channelId, serverId);
-      const isUsableState = peer.connectionState === "connected" || peer.connectionState === "connecting";
-      if (!forceReset && !isUsableState) {
+      if (!peer) {
+        return false;
+      }
+      const isUsableState =
+        peer.connectionState === "new" || peer.connectionState === "connecting" || peer.connectionState === "connected";
+      if (!forceReset && hadExistingPeer && !isUsableState) {
         closePeer(remoteUserId);
-        createPeerConnection(remoteUserId, channelId, serverId);
+        const recreated = createPeerConnection(remoteUserId, channelId, serverId);
+        if (!recreated) {
+          return false;
+        }
       }
 
       await renegotiatePeer(remoteUserId, {
@@ -1635,6 +1665,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         }
 
         const peer = createPeerConnection(participant.user_id, connectedChannelId, participant.server_id);
+        if (!peer) {
+          continue;
+        }
         try {
           const offer = await peer.createOffer({
             offerToReceiveAudio: true,
@@ -1781,9 +1814,11 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           continue;
         }
 
-        const peer = createPeerConnection(signal.user_id, connectedChannelId, signal.server_id);
-
         if (signal.signal_type === "offer") {
+          const peer = createPeerConnection(signal.user_id, connectedChannelId, signal.server_id);
+          if (!peer) {
+            continue;
+          }
           try {
             if (peer.signalingState !== "stable") {
               try {
@@ -1803,26 +1838,63 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
               signal_type: "answer",
               payload: answer,
             });
-          } catch {
-            closePeer(signal.user_id);
+          } catch (error) {
+            voiceWarn("failed to process offer", {
+              remoteUserId: signal.user_id,
+              state: peer.signalingState,
+              connectionState: peer.connectionState,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            if (peer.connectionState === "failed" || peer.connectionState === "closed" || peer.signalingState === "closed") {
+              closePeer(signal.user_id);
+            }
           }
           continue;
         }
 
         if (signal.signal_type === "answer") {
+          const peer = peersRef.current.get(signal.user_id);
+          if (!peer) {
+            voiceWarn("dropping answer: peer not found", { remoteUserId: signal.user_id });
+            continue;
+          }
+          if (peer.signalingState !== "have-local-offer") {
+            voiceWarn("dropping stale answer", {
+              remoteUserId: signal.user_id,
+              state: peer.signalingState,
+            });
+            continue;
+          }
           try {
             await peer.setRemoteDescription(new RTCSessionDescription(signal.payload as unknown as RTCSessionDescriptionInit));
             await flushPendingCandidates(signal.user_id, peer);
-          } catch {
-            closePeer(signal.user_id);
+          } catch (error) {
+            voiceWarn("failed to apply answer", {
+              remoteUserId: signal.user_id,
+              state: peer.signalingState,
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
           continue;
         }
 
         if (signal.signal_type === "ice-candidate") {
+          const peer = peersRef.current.get(signal.user_id);
           const candidate = signal.payload as RTCIceCandidateInit;
+          if (!peer) {
+            const queue = pendingCandidatesRef.current.get(signal.user_id) ?? [];
+            if (queue.length >= 64) {
+              queue.shift();
+            }
+            queue.push(candidate);
+            pendingCandidatesRef.current.set(signal.user_id, queue);
+            continue;
+          }
           if (!peer.remoteDescription) {
             const queue = pendingCandidatesRef.current.get(signal.user_id) ?? [];
+            if (queue.length >= 64) {
+              queue.shift();
+            }
             queue.push(candidate);
             pendingCandidatesRef.current.set(signal.user_id, queue);
             continue;

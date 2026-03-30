@@ -809,15 +809,19 @@ export const VoiceChannel = ({
                 ) : null}
 
                 {!screenStream && isSharingScreen && !isCurrentUser ? (
-                  <button
-                    onClick={() => {
-                      void handleRecoverScreenShare(participant.user_id);
-                    }}
-                    className="absolute right-2 bottom-2 rounded-md border border-[#6f7cff]/70 bg-[#5865f2] px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
-                    disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
-                  >
-                    {recoveringScreenByUserId[participant.user_id] ? "Подключение..." : "Подключиться к трансляции"}
-                  </button>
+                  <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/20 via-black/40 to-black/60 backdrop-blur-[4px]">
+                    <button
+                      onClick={() => {
+                        void handleRecoverScreenShare(participant.user_id);
+                      }}
+                      className="rounded-lg border border-[#7a86ff]/70 bg-[#5865f2]/90 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(22,27,49,0.5)] transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
+                      disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
+                    >
+                      {recoveringScreenByUserId[participant.user_id]
+                        ? t("voice.stream_connecting")
+                        : t("voice.join_stream")}
+                    </button>
+                  </div>
                 ) : null}
               </article>
             ))}
