@@ -939,9 +939,30 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           setRemoteScreenStreams((current) => ({ ...current, [remoteUserId]: stream }));
           event.track.addEventListener("ended", () => {
             setRemoteScreenStreams((current) => {
-              const next = { ...current };
-              delete next[remoteUserId];
-              return next;
+              const existing = current[remoteUserId];
+              if (!existing) {
+                return current;
+              }
+
+              const existingVideoTracks = existing.getVideoTracks();
+              const containsEndedTrack = existingVideoTracks.some((track) => track.id === event.track.id);
+              if (!containsEndedTrack) {
+                // A newer renegotiation already replaced this track.
+                return current;
+              }
+
+              const remainingTracks = existing.getTracks().filter((track) => track.id !== event.track.id);
+              const hasLiveVideoTrack = remainingTracks.some((track) => track.kind === "video" && track.readyState === "live");
+              if (!hasLiveVideoTrack) {
+                const next = { ...current };
+                delete next[remoteUserId];
+                return next;
+              }
+
+              return {
+                ...current,
+                [remoteUserId]: new MediaStream(remainingTracks),
+              };
             });
           });
           return;
