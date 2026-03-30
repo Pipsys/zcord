@@ -82,6 +82,7 @@ const ICE_SERVERS = buildIceServers();
 const DEFAULT_INPUT_DEVICE_ID = "__system_default__";
 const DEFAULT_SCREEN_SOURCE_ID = "__auto__";
 const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
+const ICE_RESTART_MAX_ATTEMPTS = 2;
 const SCREEN_SHARE_TARGET_FPS = 60;
 const SCREEN_SHARE_MIN_FPS = 30;
 const DEFAULT_JOIN_SOUND_PATH = "sounds/voice-join.wav";
@@ -233,6 +234,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const screenShareStatsRef = useRef<Map<string, { timestamp: number; frames: number }>>(new Map());
   const screenShareStatsTimerRef = useRef<number | null>(null);
   const pendingRenegotiationsRef = useRef<Set<string>>(new Set());
+  const pendingIceRestartRef = useRef<Set<string>>(new Set());
+  const iceRestartAttemptsRef = useRef<Map<string, number>>(new Map());
+  const iceRestartTimersRef = useRef<Map<string, number>>(new Map());
   const screenRecoveryAttemptsRef = useRef<Map<string, number>>(new Map());
   const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
@@ -637,12 +641,18 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       window.clearTimeout(disconnectTimer);
       disconnectTimersRef.current.delete(remoteUserId);
     }
+    const iceRestartTimer = iceRestartTimersRef.current.get(remoteUserId);
+    if (iceRestartTimer) {
+      window.clearTimeout(iceRestartTimer);
+      iceRestartTimersRef.current.delete(remoteUserId);
+    }
 
     const peer = peersRef.current.get(remoteUserId);
     if (peer) {
       peer.onicecandidate = null;
       peer.ontrack = null;
       peer.onconnectionstatechange = null;
+      peer.onsignalingstatechange = null;
       peer.close();
       peersRef.current.delete(remoteUserId);
     }
@@ -650,6 +660,8 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     screenSendersRef.current.delete(remoteUserId);
     pendingCandidatesRef.current.delete(remoteUserId);
     pendingRenegotiationsRef.current.delete(remoteUserId);
+    pendingIceRestartRef.current.delete(remoteUserId);
+    iceRestartAttemptsRef.current.delete(remoteUserId);
     screenRecoveryAttemptsRef.current.delete(remoteUserId);
     setRemoteStreams((current) => {
       const next = { ...current };
@@ -676,28 +688,42 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   }, [closePeer]);
 
   const renegotiatePeer = useCallback(
-    async (remoteUserId: string): Promise<void> => {
+    async (remoteUserId: string, options?: { iceRestart?: boolean; reason?: string }): Promise<void> => {
       const peer = peersRef.current.get(remoteUserId);
       const meta = peerMetaRef.current.get(remoteUserId);
       if (!peer || !meta) {
         return;
       }
+      const shouldIceRestart = Boolean(options?.iceRestart || pendingIceRestartRef.current.has(remoteUserId));
       if (peer.signalingState !== "stable") {
         pendingRenegotiationsRef.current.add(remoteUserId);
+        if (shouldIceRestart) {
+          pendingIceRestartRef.current.add(remoteUserId);
+        }
         voiceWarn("skip renegotiation: signaling state is not stable", {
           remoteUserId,
           state: peer.signalingState,
+          iceRestart: shouldIceRestart,
         });
         return;
       }
       pendingRenegotiationsRef.current.delete(remoteUserId);
+      pendingIceRestartRef.current.delete(remoteUserId);
 
       try {
         const offer = await peer.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: true,
+          iceRestart: shouldIceRestart,
         });
         await peer.setLocalDescription(offer);
+        voiceLog("sending offer", {
+          remoteUserId,
+          channelId: meta.channelId,
+          serverId: meta.serverId,
+          iceRestart: shouldIceRestart,
+          reason: options?.reason ?? null,
+        });
         sendGatewayEvent("VOICE_SIGNAL", {
           channel_id: meta.channelId,
           server_id: meta.serverId,
@@ -710,6 +736,37 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       }
     },
     [closePeer, sendGatewayEvent],
+  );
+
+  const scheduleIceRestart = useCallback(
+    (remoteUserId: string, reason: string): boolean => {
+      const peer = peersRef.current.get(remoteUserId);
+      if (!peer || peer.connectionState === "closed" || peer.signalingState === "closed") {
+        return false;
+      }
+      if (iceRestartTimersRef.current.has(remoteUserId)) {
+        return true;
+      }
+
+      const attempts = iceRestartAttemptsRef.current.get(remoteUserId) ?? 0;
+      if (attempts >= ICE_RESTART_MAX_ATTEMPTS) {
+        voiceWarn("ice restart attempts exhausted", { remoteUserId, reason, attempts });
+        return false;
+      }
+
+      const nextAttempt = attempts + 1;
+      iceRestartAttemptsRef.current.set(remoteUserId, nextAttempt);
+      const delayMs = 250 * nextAttempt;
+      voiceWarn("scheduling ice restart", { remoteUserId, reason, attempt: nextAttempt, delayMs });
+
+      const timer = window.setTimeout(() => {
+        iceRestartTimersRef.current.delete(remoteUserId);
+        void renegotiatePeer(remoteUserId, { iceRestart: true, reason });
+      }, delayMs);
+      iceRestartTimersRef.current.set(remoteUserId, timer);
+      return true;
+    },
+    [renegotiatePeer],
   );
 
   const stopScreenShare = useCallback(async (): Promise<boolean> => {
@@ -934,10 +991,18 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
             window.clearTimeout(timer);
             disconnectTimersRef.current.delete(remoteUserId);
           }
+          const restartTimer = iceRestartTimersRef.current.get(remoteUserId);
+          if (restartTimer) {
+            window.clearTimeout(restartTimer);
+            iceRestartTimersRef.current.delete(remoteUserId);
+          }
+          iceRestartAttemptsRef.current.delete(remoteUserId);
+          pendingIceRestartRef.current.delete(remoteUserId);
           return;
         }
 
         if (state === "disconnected") {
+          void scheduleIceRestart(remoteUserId, "connection-disconnected");
           if (!disconnectTimersRef.current.has(remoteUserId)) {
             const timer = window.setTimeout(() => {
               const currentPeer = peersRef.current.get(remoteUserId);
@@ -954,7 +1019,15 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           return;
         }
 
-        if (state === "failed" || state === "closed") {
+        if (state === "failed") {
+          const scheduled = scheduleIceRestart(remoteUserId, "connection-failed");
+          if (!scheduled) {
+            closePeer(remoteUserId);
+          }
+          return;
+        }
+
+        if (state === "closed") {
           closePeer(remoteUserId);
         }
       };
@@ -967,14 +1040,18 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         if (!pendingRenegotiationsRef.current.has(remoteUserId)) {
           return;
         }
+        const shouldIceRestart = pendingIceRestartRef.current.has(remoteUserId);
         pendingRenegotiationsRef.current.delete(remoteUserId);
-        void renegotiatePeer(remoteUserId);
+        void renegotiatePeer(remoteUserId, {
+          iceRestart: shouldIceRestart,
+          reason: "signaling-stable",
+        });
       };
 
       peersRef.current.set(remoteUserId, peer);
       return peer;
     },
-    [closePeer, renegotiatePeer, sendGatewayEvent],
+    [closePeer, renegotiatePeer, scheduleIceRestart, sendGatewayEvent],
   );
 
   const join = useCallback(

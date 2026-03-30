@@ -82,6 +82,29 @@ export const VoiceChannel = ({
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
 
+  const safePlayVideo = useCallback(async (video: HTMLVideoElement, desiredMuted: boolean): Promise<void> => {
+    video.muted = desiredMuted;
+    try {
+      await video.play();
+      return;
+    } catch {
+      // Fallback for autoplay policies: bootstrap muted playback first.
+    }
+
+    if (desiredMuted) {
+      return;
+    }
+
+    try {
+      video.muted = true;
+      await video.play();
+      video.muted = false;
+      void video.play().catch(() => undefined);
+    } catch {
+      // Keep stream attached; user gesture can start playback later.
+    }
+  }, []);
+
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const fullscreenVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -228,11 +251,10 @@ export const VoiceChannel = ({
       }
 
       if (nextStream) {
-        video.muted = participant.user_id === user?.id;
-        void video.play().catch(() => undefined);
+        void safePlayVideo(video, participant.user_id === user?.id);
       }
     }
-  }, [screenParticipants, user?.id, remoteScreenStreams, localScreenStream]);
+  }, [localScreenStream, remoteScreenStreams, safePlayVideo, screenParticipants, user?.id]);
 
   useEffect(() => {
     const video = fullscreenVideoRef.current;
@@ -246,10 +268,9 @@ export const VoiceChannel = ({
     }
 
     if (fullscreenStream) {
-      video.muted = fullscreenUserId === user?.id;
-      void video.play().catch(() => undefined);
+      void safePlayVideo(video, fullscreenUserId === user?.id);
     }
-  }, [fullscreenStream, fullscreenUserId, user?.id]);
+  }, [fullscreenStream, fullscreenUserId, safePlayVideo, user?.id]);
 
   useEffect(() => {
     if (!fullscreenUserId) {
@@ -592,10 +613,9 @@ export const VoiceChannel = ({
       media.srcObject = screenPickerPreviewStream;
     }
     if (screenPickerPreviewStream) {
-      video.muted = true;
-      void video.play().catch(() => undefined);
+      void safePlayVideo(video, true);
     }
-  }, [screenPickerPreviewStream]);
+  }, [safePlayVideo, screenPickerPreviewStream]);
 
   useEffect(() => {
     return () => {
