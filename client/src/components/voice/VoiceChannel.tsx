@@ -51,6 +51,33 @@ const toParticipantName = (participant: VoiceParticipant, currentUserId: string 
   return `user-${participant.user_id.slice(0, 6)}`;
 };
 
+const clampUnit = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.min(1, Math.max(0, value));
+};
+
+const StreamVolumeIcon = ({ muted }: { muted: boolean }) => {
+  if (muted) {
+    return (
+      <svg viewBox="0 0 24 24" className="h-[13px] w-[13px] fill-none stroke-current stroke-[2]" aria-hidden>
+        <path d="M4 10h4l5-4v12l-5-4H4z" />
+        <path d="M20 9l-6 6" />
+        <path d="M14 9l6 6" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" className="h-[13px] w-[13px] fill-none stroke-current stroke-[2]" aria-hidden>
+      <path d="M4 10h4l5-4v12l-5-4H4z" />
+      <path d="M16 9a5 5 0 0 1 0 6" />
+      <path d="M19 7a8 8 0 0 1 0 10" />
+    </svg>
+  );
+};
+
 export const VoiceChannel = ({
   serverName,
   channelId,
@@ -122,6 +149,7 @@ export const VoiceChannel = ({
   const [screenPickerPreviewFailed, setScreenPickerPreviewFailed] = useState(false);
   const [recoveringScreenByUserId, setRecoveringScreenByUserId] = useState<Record<string, boolean>>({});
   const [joinedScreenByUserId, setJoinedScreenByUserId] = useState<Record<string, boolean>>({});
+  const [streamVolumeByUserId, setStreamVolumeByUserId] = useState<Record<string, number>>({});
   const [shareClockMs, setShareClockMs] = useState<number>(() => Date.now());
   const screenPickerPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenPickerPreviewRequestIdRef = useRef(0);
@@ -175,6 +203,27 @@ export const VoiceChannel = ({
     return remoteScreenStreams[participantUserId] ?? null;
   };
 
+  const getStreamVolume = useCallback(
+    (participantUserId: string): number => {
+      if (participantUserId === user?.id) {
+        return 0;
+      }
+      return clampUnit(streamVolumeByUserId[participantUserId] ?? 1);
+    },
+    [streamVolumeByUserId, user?.id],
+  );
+
+  const setStreamVolume = useCallback((participantUserId: string, value: number) => {
+    const nextValue = clampUnit(value);
+    setStreamVolumeByUserId((current) => {
+      const currentValue = clampUnit(current[participantUserId] ?? 1);
+      if (Math.abs(currentValue - nextValue) < 0.005) {
+        return current;
+      }
+      return { ...current, [participantUserId]: nextValue };
+    });
+  }, []);
+
   useEffect(() => {
     if (!connected) {
       return;
@@ -189,6 +238,7 @@ export const VoiceChannel = ({
     if (!connected) {
       setJoinedScreenByUserId({});
       setRecoveringScreenByUserId({});
+      setStreamVolumeByUserId({});
       missingScreenSinceByUserIdRef.current.clear();
       return;
     }
@@ -225,6 +275,22 @@ export const VoiceChannel = ({
       return changed ? next : current;
     });
   }, [connected, visibleParticipants, user?.id]);
+
+  useEffect(() => {
+    const participantIds = new Set(visibleParticipants.map((participant) => participant.user_id));
+    setStreamVolumeByUserId((current) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [userId, userVolume] of Object.entries(current)) {
+        if (participantIds.has(userId)) {
+          next[userId] = clampUnit(userVolume);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [visibleParticipants]);
 
   const screenParticipants = useMemo(
     () =>
@@ -336,10 +402,11 @@ export const VoiceChannel = ({
       }
 
       if (nextStream) {
+        video.volume = getStreamVolume(participant.user_id);
         void safePlayVideo(video, participant.user_id === user?.id);
       }
     }
-  }, [localScreenStream, remoteScreenStreams, safePlayVideo, screenParticipants, user?.id]);
+  }, [getStreamVolume, localScreenStream, remoteScreenStreams, safePlayVideo, screenParticipants, user?.id]);
 
   useEffect(() => {
     const video = fullscreenVideoRef.current;
@@ -353,9 +420,10 @@ export const VoiceChannel = ({
     }
 
     if (fullscreenStream) {
+      video.volume = getStreamVolume(fullscreenUserId);
       void safePlayVideo(video, fullscreenUserId === user?.id);
     }
-  }, [fullscreenStream, fullscreenUserId, safePlayVideo, user?.id]);
+  }, [fullscreenStream, fullscreenUserId, getStreamVolume, safePlayVideo, user?.id]);
 
   useEffect(() => {
     if (!fullscreenUserId) {
@@ -816,12 +884,36 @@ export const VoiceChannel = ({
                   ) : null}
 
                   {screenStream && canViewScreen ? (
-                    <button
-                      onClick={() => setFullscreenUserId(participant.user_id)}
-                      className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-100 transition hover:bg-black/70"
-                    >
-                      {t("voice.expand_stream")}
-                    </button>
+                    <div className="absolute bottom-2 right-2 flex items-center gap-2">
+                      {!isCurrentUser ? (
+                        <label
+                          className="flex items-center gap-1.5 rounded-md border border-white/20 bg-black/55 px-2 py-1 text-white shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
+                          title={`${t("voice.volume")}: ${Math.round(getStreamVolume(participant.user_id) * 100)}%`}
+                        >
+                          <span className="text-[#b7bdc8]">
+                            <StreamVolumeIcon muted={getStreamVolume(participant.user_id) <= 0.01} />
+                          </span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={Math.round(getStreamVolume(participant.user_id) * 100)}
+                            onChange={(event) => {
+                              setStreamVolume(participant.user_id, Number(event.target.value) / 100);
+                            }}
+                            className="h-1.5 w-24 cursor-pointer accent-[#6f7cff]"
+                            aria-label={t("voice.volume")}
+                          />
+                        </label>
+                      ) : null}
+                      <button
+                        onClick={() => setFullscreenUserId(participant.user_id)}
+                        className="rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-black/70"
+                      >
+                        {t("voice.expand_stream")}
+                      </button>
+                    </div>
                   ) : null}
 
                   {isSharingScreen && !isCurrentUser && !canViewScreen ? (
@@ -944,12 +1036,36 @@ export const VoiceChannel = ({
                 ) : null}
 
                 {screenStream && canViewScreen ? (
-                  <button
-                    onClick={() => setFullscreenUserId(participant.user_id)}
-                    className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
-                  >
-                    {t("voice.expand_stream")}
-                  </button>
+                  <div className="absolute bottom-2 right-2 flex items-center gap-2">
+                    {!isCurrentUser ? (
+                      <label
+                        className="flex items-center gap-1.5 rounded-md border border-white/20 bg-black/55 px-2 py-1 text-white opacity-0 shadow-[0_2px_10px_rgba(0,0,0,0.35)] transition group-hover:opacity-100"
+                        title={`${t("voice.volume")}: ${Math.round(getStreamVolume(participant.user_id) * 100)}%`}
+                      >
+                        <span className="text-[#b7bdc8]">
+                          <StreamVolumeIcon muted={getStreamVolume(participant.user_id) <= 0.01} />
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={Math.round(getStreamVolume(participant.user_id) * 100)}
+                          onChange={(event) => {
+                            setStreamVolume(participant.user_id, Number(event.target.value) / 100);
+                          }}
+                          className="h-1.5 w-24 cursor-pointer accent-[#6f7cff]"
+                          aria-label={t("voice.volume")}
+                        />
+                      </label>
+                    ) : null}
+                    <button
+                      onClick={() => setFullscreenUserId(participant.user_id)}
+                      className="rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
+                    >
+                      {t("voice.expand_stream")}
+                    </button>
+                  </div>
                 ) : null}
 
                 {isSharingScreen && !isCurrentUser && (!screenStream || !canViewScreen) ? (
