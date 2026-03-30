@@ -224,6 +224,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const localScreenStreamRef = useRef<MediaStream | null>(null);
   const localScreenTrackRef = useRef<MediaStreamTrack | null>(null);
   const localScreenAudioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const remoteScreenStreamsRef = useRef<Record<string, MediaStream>>({});
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const peerMetaRef = useRef<Map<string, { channelId: string; serverId: string | null }>>(new Map());
   const screenSendersRef = useRef<Map<string, ScreenShareSenders>>(new Map());
@@ -258,6 +259,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
     return participantsByChannel[connectedChannelId] ?? [];
   }, [connectedChannelId, participantsByChannel]);
+
+  useEffect(() => {
+    remoteScreenStreamsRef.current = remoteScreenStreams;
+  }, [remoteScreenStreams]);
 
   const waitForSocketOpen = useCallback(async (targetSocket: WebSocket): Promise<boolean> => {
     if (targetSocket.readyState === WebSocket.OPEN) {
@@ -954,6 +959,59 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       peer.ontrack = (event) => {
         const stream = event.streams[0] ?? new MediaStream([event.track]);
+        const detachRemoteVoiceAudioTrack = (audioTrackId: string) => {
+          setRemoteStreams((current) => {
+            const existing = current[remoteUserId];
+            if (!existing) {
+              return current;
+            }
+            const nextTracks = existing.getAudioTracks().filter((track) => track.id !== audioTrackId);
+            if (nextTracks.length === existing.getAudioTracks().length) {
+              return current;
+            }
+            if (nextTracks.length === 0) {
+              const next = { ...current };
+              delete next[remoteUserId];
+              return next;
+            }
+            return { ...current, [remoteUserId]: new MediaStream(nextTracks) };
+          });
+        };
+
+        const attachRemoteScreenAudioTrack = (audioTrack: MediaStreamTrack, targetStream: MediaStream) => {
+          setRemoteScreenStreams((current) => {
+            const existing = current[remoteUserId] ?? targetStream;
+            const existingTracks = existing.getTracks();
+            const hasTrack = existingTracks.some((track) => track.id === audioTrack.id);
+            if (hasTrack) {
+              return current;
+            }
+            return {
+              ...current,
+              [remoteUserId]: new MediaStream([...existingTracks, audioTrack]),
+            };
+          });
+          detachRemoteVoiceAudioTrack(audioTrack.id);
+          audioTrack.addEventListener("ended", () => {
+            setRemoteScreenStreams((current) => {
+              const existing = current[remoteUserId];
+              if (!existing) {
+                return current;
+              }
+              const nextTracks = existing.getTracks().filter((track) => track.id !== audioTrack.id);
+              if (nextTracks.length === existing.getTracks().length) {
+                return current;
+              }
+              if (nextTracks.length === 0) {
+                const next = { ...current };
+                delete next[remoteUserId];
+                return next;
+              }
+              return { ...current, [remoteUserId]: new MediaStream(nextTracks) };
+            });
+          });
+        };
+
         const attachRemoteAudioTrack = (audioTrack: MediaStreamTrack) => {
           setRemoteStreams((current) => {
             const existing = current[remoteUserId];
@@ -992,7 +1050,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           });
           setRemoteScreenStreams((current) => ({ ...current, [remoteUserId]: stream }));
           for (const audioTrack of stream.getAudioTracks()) {
-            attachRemoteAudioTrack(audioTrack);
+            attachRemoteScreenAudioTrack(audioTrack, stream);
           }
           event.track.addEventListener("ended", () => {
             setRemoteScreenStreams((current) => {
@@ -1029,6 +1087,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           trackId: event.track.id,
           streamId: stream.id,
         });
+        const screenStream = remoteScreenStreamsRef.current[remoteUserId];
+        const isScreenAudio = Boolean(screenStream && screenStream.id === stream.id);
+        if (isScreenAudio) {
+          attachRemoteScreenAudioTrack(event.track, screenStream);
+          return;
+        }
         attachRemoteAudioTrack(event.track);
       };
 

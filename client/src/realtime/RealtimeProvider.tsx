@@ -34,6 +34,7 @@ export const RealtimeProvider = ({ children }: { children: ReactNode }) => {
         connectedChannelId={voiceRoom.connectedChannelId}
         participants={voiceRoom.participants}
         remoteStreams={voiceRoom.remoteStreams}
+        remoteScreenStreams={voiceRoom.remoteScreenStreams}
         deafened={voiceRoom.deafened}
         volume={voiceRoom.volume}
       />

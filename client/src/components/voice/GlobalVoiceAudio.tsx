@@ -7,11 +7,19 @@ interface GlobalVoiceAudioProps {
   connectedChannelId: string | null;
   participants: VoiceParticipant[];
   remoteStreams: Record<string, MediaStream>;
+  remoteScreenStreams: Record<string, MediaStream>;
   deafened: boolean;
   volume: number;
 }
 
-export const GlobalVoiceAudio = ({ connectedChannelId, participants, remoteStreams, deafened, volume }: GlobalVoiceAudioProps) => {
+export const GlobalVoiceAudio = ({
+  connectedChannelId,
+  participants,
+  remoteStreams,
+  remoteScreenStreams,
+  deafened,
+  volume,
+}: GlobalVoiceAudioProps) => {
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const trackStreamsRef = useRef<Record<string, MediaStream>>({});
@@ -51,13 +59,16 @@ export const GlobalVoiceAudio = ({ connectedChannelId, participants, remoteStrea
         if (!stream) {
           return [];
         }
+        const screenAudioTrackIds = new Set(
+          (remoteScreenStreams[participant.user_id]?.getAudioTracks() ?? []).map((track) => track.id),
+        );
         return stream.getAudioTracks().map((track) => ({
           key: `${participant.user_id}:${track.id}`,
           userId: participant.user_id,
           track,
-        }));
+        })).filter((entry) => !screenAudioTrackIds.has(entry.track.id));
       }),
-    [remoteParticipants, remoteStreams],
+    [remoteParticipants, remoteScreenStreams, remoteStreams],
   );
 
   useEffect(() => {
