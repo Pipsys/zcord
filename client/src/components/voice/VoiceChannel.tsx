@@ -38,6 +38,7 @@ interface VoiceChannelProps {
   onInputDeviceChange: (deviceId: string) => Promise<boolean>;
   onRefreshScreenSources: () => Promise<ScreenShareSource[]>;
   onScreenSourceChange: (sourceId: string) => Promise<boolean>;
+  onRecoverScreenShare: (remoteUserId: string, options?: { forceReset?: boolean }) => Promise<boolean>;
 }
 
 const toParticipantName = (participant: VoiceParticipant, currentUserId: string | null, currentUsername: string | null): string => {
@@ -78,6 +79,7 @@ export const VoiceChannel = ({
   onInputDeviceChange,
   onRefreshScreenSources,
   onScreenSourceChange,
+  onRecoverScreenShare,
 }: VoiceChannelProps) => {
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
@@ -118,6 +120,7 @@ export const VoiceChannel = ({
   const [screenPickerPreviewStream, setScreenPickerPreviewStream] = useState<MediaStream | null>(null);
   const [screenPickerPreviewLoading, setScreenPickerPreviewLoading] = useState(false);
   const [screenPickerPreviewFailed, setScreenPickerPreviewFailed] = useState(false);
+  const [recoveringScreenByUserId, setRecoveringScreenByUserId] = useState<Record<string, boolean>>({});
   const screenPickerPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenPickerPreviewRequestIdRef = useRef(0);
 
@@ -486,6 +489,25 @@ export const VoiceChannel = ({
     }
   }, []);
 
+  const handleRecoverScreenShare = useCallback(
+    async (remoteUserId: string): Promise<void> => {
+      if (!remoteUserId || recoveringScreenByUserId[remoteUserId]) {
+        return;
+      }
+      setRecoveringScreenByUserId((current) => ({ ...current, [remoteUserId]: true }));
+      try {
+        await onRecoverScreenShare(remoteUserId, { forceReset: true });
+      } finally {
+        setRecoveringScreenByUserId((current) => {
+          const next = { ...current };
+          delete next[remoteUserId];
+          return next;
+        });
+      }
+    },
+    [onRecoverScreenShare, recoveringScreenByUserId],
+  );
+
   const startScreenPickerPreview = useCallback(
     async (sourceId: string): Promise<void> => {
       if (!screenPickerOpen) {
@@ -783,6 +805,18 @@ export const VoiceChannel = ({
                     className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
                   >
                     {t("voice.expand_stream")}
+                  </button>
+                ) : null}
+
+                {!screenStream && isSharingScreen && !isCurrentUser ? (
+                  <button
+                    onClick={() => {
+                      void handleRecoverScreenShare(participant.user_id);
+                    }}
+                    className="absolute right-2 bottom-2 rounded-md border border-[#6f7cff]/70 bg-[#5865f2] px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
+                    disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
+                  >
+                    {recoveringScreenByUserId[participant.user_id] ? "Подключение..." : "Подключиться к трансляции"}
                   </button>
                 ) : null}
               </article>

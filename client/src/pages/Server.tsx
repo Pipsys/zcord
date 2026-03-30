@@ -724,6 +724,7 @@ const ServerPage = () => {
                 onInputDeviceChange={voiceRoom.setInputDevice}
                 onRefreshScreenSources={voiceRoom.refreshScreenSources}
                 onScreenSourceChange={voiceRoom.setScreenSource}
+                onRecoverScreenShare={voiceRoom.recoverRemoteScreen}
               />
             </Suspense>
           ) : null}

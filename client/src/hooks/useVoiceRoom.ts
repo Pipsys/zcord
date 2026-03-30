@@ -42,6 +42,7 @@ interface UseVoiceRoomResult {
   setInputDevice: (deviceId: string) => Promise<boolean>;
   refreshScreenSources: () => Promise<ScreenShareSource[]>;
   setScreenSource: (sourceId: string) => Promise<boolean>;
+  recoverRemoteScreen: (remoteUserId: string, options?: { forceReset?: boolean; reason?: string }) => Promise<boolean>;
 }
 
 const buildIceServers = (): RTCIceServer[] => {
@@ -236,6 +237,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const iceRestartAttemptsRef = useRef<Map<string, number>>(new Map());
   const iceRestartTimersRef = useRef<Map<string, number>>(new Map());
   const screenRecoveryAttemptsRef = useRef<Map<string, number>>(new Map());
+  const screenRecoveryCountersRef = useRef<Map<string, number>>(new Map());
   const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
   const lastRejoinSocketRef = useRef<WebSocket | null>(null);
@@ -1081,6 +1083,40 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     [closePeer, renegotiatePeer, scheduleIceRestart, sendGatewayEvent],
   );
 
+  const recoverRemoteScreen = useCallback(
+    async (remoteUserId: string, options?: { forceReset?: boolean; reason?: string }): Promise<boolean> => {
+      const channelId = connectedChannelIdRef.current;
+      if (!channelId) {
+        return false;
+      }
+
+      const latestParticipants = useVoiceStore.getState().participantsByChannel[channelId] ?? [];
+      const participant = latestParticipants.find((item) => item.user_id === remoteUserId);
+      const serverId =
+        participant?.server_id ?? peerMetaRef.current.get(remoteUserId)?.serverId ?? connectedServerIdRef.current ?? null;
+
+      const forceReset = Boolean(options?.forceReset);
+      const existingPeer = peersRef.current.get(remoteUserId);
+      if (forceReset && existingPeer) {
+        closePeer(remoteUserId);
+      }
+
+      const peer = createPeerConnection(remoteUserId, channelId, serverId);
+      const isUsableState = peer.connectionState === "connected" || peer.connectionState === "connecting";
+      if (!forceReset && !isUsableState) {
+        closePeer(remoteUserId);
+        createPeerConnection(remoteUserId, channelId, serverId);
+      }
+
+      await renegotiatePeer(remoteUserId, {
+        iceRestart: forceReset,
+        reason: options?.reason ?? (forceReset ? "manual-screen-recover-reset" : "manual-screen-recover"),
+      });
+      return true;
+    },
+    [closePeer, createPeerConnection, renegotiatePeer],
+  );
+
   const join = useCallback(
     async (channelId: string, serverId: string | null): Promise<boolean> => {
       if (!socket) {
@@ -1670,46 +1706,30 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   useEffect(() => {
     if (!connectedChannelId) {
       screenRecoveryAttemptsRef.current.clear();
+      screenRecoveryCountersRef.current.clear();
       return;
     }
 
     const now = Date.now();
     const retryIntervalMs = 2_500;
+    const hardResetAfterAttempts = 3;
     const activeSharers = new Set(
       participants
         .filter((participant) => participant.user_id !== currentUserId && Boolean(participant.screen_sharing))
         .map((participant) => participant.user_id),
     );
 
-    for (const [remoteUserId, lastAttemptAt] of Array.from(screenRecoveryAttemptsRef.current.entries())) {
-      if (!activeSharers.has(remoteUserId)) {
-        screenRecoveryAttemptsRef.current.delete(remoteUserId);
-        continue;
+    for (const trackedUserId of Array.from(screenRecoveryAttemptsRef.current.keys())) {
+      if (!activeSharers.has(trackedUserId)) {
+        screenRecoveryAttemptsRef.current.delete(trackedUserId);
+        screenRecoveryCountersRef.current.delete(trackedUserId);
       }
-      if (remoteScreenStreams[remoteUserId]?.getVideoTracks().some((track) => track.readyState === "live")) {
-        screenRecoveryAttemptsRef.current.delete(remoteUserId);
-        continue;
-      }
-      if (now - lastAttemptAt < retryIntervalMs) {
-        continue;
-      }
-
-      const peer = peersRef.current.get(remoteUserId);
-      if (!peer) {
-        continue;
-      }
-      if (peer.connectionState !== "connected" && peer.connectionState !== "connecting") {
-        continue;
-      }
-
-      screenRecoveryAttemptsRef.current.set(remoteUserId, now);
-      void renegotiatePeer(remoteUserId);
-      voiceWarn("screen recovery renegotiation requested", { remoteUserId, state: peer.connectionState });
     }
 
     for (const remoteUserId of activeSharers) {
       if (remoteScreenStreams[remoteUserId]?.getVideoTracks().some((track) => track.readyState === "live")) {
         screenRecoveryAttemptsRef.current.delete(remoteUserId);
+        screenRecoveryCountersRef.current.delete(remoteUserId);
         continue;
       }
 
@@ -1718,19 +1738,18 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         continue;
       }
 
-      const peer = peersRef.current.get(remoteUserId);
-      if (!peer) {
-        continue;
-      }
-      if (peer.connectionState !== "connected" && peer.connectionState !== "connecting") {
-        continue;
-      }
-
       screenRecoveryAttemptsRef.current.set(remoteUserId, now);
-      void renegotiatePeer(remoteUserId);
-      voiceWarn("screen recovery renegotiation requested", { remoteUserId, state: peer.connectionState });
+      const attempts = (screenRecoveryCountersRef.current.get(remoteUserId) ?? 0) + 1;
+      const forceReset = attempts >= hardResetAfterAttempts;
+      screenRecoveryCountersRef.current.set(remoteUserId, forceReset ? 0 : attempts);
+      void recoverRemoteScreen(remoteUserId, {
+        forceReset,
+        reason: forceReset ? "screen-recovery-hard-reset" : "screen-recovery-renegotiate",
+      });
+      const state = peersRef.current.get(remoteUserId)?.connectionState ?? "none";
+      voiceWarn("screen recovery requested", { remoteUserId, state, attempts, forceReset });
     }
-  }, [connectedChannelId, currentUserId, participants, remoteScreenStreams, renegotiatePeer]);
+  }, [connectedChannelId, currentUserId, participants, recoverRemoteScreen, remoteScreenStreams]);
 
   useEffect(() => {
     if (!connectedChannelId) {
@@ -1942,5 +1961,6 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     setInputDevice,
     refreshScreenSources,
     setScreenSource,
+    recoverRemoteScreen,
   };
 };
