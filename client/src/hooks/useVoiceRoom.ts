@@ -691,7 +691,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       pendingRenegotiationsRef.current.delete(remoteUserId);
 
       try {
-        const offer = await peer.createOffer();
+        const offer = await peer.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+        });
         await peer.setLocalDescription(offer);
         sendGatewayEvent("VOICE_SIGNAL", {
           channel_id: meta.channelId,
@@ -822,14 +825,6 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         for (const track of localStream.getTracks()) {
           peer.addTrack(track, localStream);
         }
-      }
-
-      // Keep a dedicated recv-only video transceiver so that on rejoin we can
-      // immediately receive an already-running remote screen share in answer.
-      try {
-        peer.addTransceiver("video", { direction: "recvonly" });
-      } catch {
-        // Some environments can reject explicit transceivers; ignore.
       }
 
       const screenTrack = localScreenTrackRef.current;
@@ -1509,7 +1504,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
         const peer = createPeerConnection(participant.user_id, connectedChannelId, participant.server_id);
         try {
-          const offer = await peer.createOffer();
+          const offer = await peer.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true,
+          });
           await peer.setLocalDescription(offer);
           voiceLog("sending offer", {
             channelId: connectedChannelId,
