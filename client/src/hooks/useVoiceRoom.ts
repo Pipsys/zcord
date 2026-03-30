@@ -233,6 +233,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const screenShareStatsRef = useRef<Map<string, { timestamp: number; frames: number }>>(new Map());
   const screenShareStatsTimerRef = useRef<number | null>(null);
   const pendingRenegotiationsRef = useRef<Set<string>>(new Set());
+  const screenRecoveryAttemptsRef = useRef<Map<string, number>>(new Map());
   const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
   const lastRejoinSocketRef = useRef<WebSocket | null>(null);
@@ -649,6 +650,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     screenSendersRef.current.delete(remoteUserId);
     pendingCandidatesRef.current.delete(remoteUserId);
     pendingRenegotiationsRef.current.delete(remoteUserId);
+    screenRecoveryAttemptsRef.current.delete(remoteUserId);
     setRemoteStreams((current) => {
       const next = { ...current };
       delete next[remoteUserId];
@@ -1570,6 +1572,71 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       return changed ? next : current;
     });
   }, [connectedChannelId, currentUserId, participants]);
+
+  useEffect(() => {
+    if (!connectedChannelId) {
+      screenRecoveryAttemptsRef.current.clear();
+      return;
+    }
+
+    const now = Date.now();
+    const retryIntervalMs = 2_500;
+    const activeSharers = new Set(
+      participants
+        .filter((participant) => participant.user_id !== currentUserId && Boolean(participant.screen_sharing))
+        .map((participant) => participant.user_id),
+    );
+
+    for (const [remoteUserId, lastAttemptAt] of Array.from(screenRecoveryAttemptsRef.current.entries())) {
+      if (!activeSharers.has(remoteUserId)) {
+        screenRecoveryAttemptsRef.current.delete(remoteUserId);
+        continue;
+      }
+      if (remoteScreenStreams[remoteUserId]?.getVideoTracks().some((track) => track.readyState === "live")) {
+        screenRecoveryAttemptsRef.current.delete(remoteUserId);
+        continue;
+      }
+      if (now - lastAttemptAt < retryIntervalMs) {
+        continue;
+      }
+
+      const peer = peersRef.current.get(remoteUserId);
+      if (!peer) {
+        continue;
+      }
+      if (peer.connectionState !== "connected" && peer.connectionState !== "connecting") {
+        continue;
+      }
+
+      screenRecoveryAttemptsRef.current.set(remoteUserId, now);
+      void renegotiatePeer(remoteUserId);
+      voiceWarn("screen recovery renegotiation requested", { remoteUserId, state: peer.connectionState });
+    }
+
+    for (const remoteUserId of activeSharers) {
+      if (remoteScreenStreams[remoteUserId]?.getVideoTracks().some((track) => track.readyState === "live")) {
+        screenRecoveryAttemptsRef.current.delete(remoteUserId);
+        continue;
+      }
+
+      const lastAttemptAt = screenRecoveryAttemptsRef.current.get(remoteUserId) ?? 0;
+      if (now - lastAttemptAt < retryIntervalMs) {
+        continue;
+      }
+
+      const peer = peersRef.current.get(remoteUserId);
+      if (!peer) {
+        continue;
+      }
+      if (peer.connectionState !== "connected" && peer.connectionState !== "connecting") {
+        continue;
+      }
+
+      screenRecoveryAttemptsRef.current.set(remoteUserId, now);
+      void renegotiatePeer(remoteUserId);
+      voiceWarn("screen recovery renegotiation requested", { remoteUserId, state: peer.connectionState });
+    }
+  }, [connectedChannelId, currentUserId, participants, remoteScreenStreams, renegotiatePeer]);
 
   useEffect(() => {
     if (!connectedChannelId) {
