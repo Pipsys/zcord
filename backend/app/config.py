@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     env: str = "development"
     debug: bool = False
     api_prefix: str = "/api/v1"
+    public_api_base_url: str | None = None
 
     database_url: str = "postgresql+asyncpg://pawcord:pawcord@localhost:5432/pawcord"
     redis_url: str = "redis://:REDIS_SECRET_REMOVED@localhost:6379/0"

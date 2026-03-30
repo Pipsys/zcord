@@ -899,6 +899,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           channel_id: connectedChannelId,
           server_id: serverId,
         });
+        playPresenceCue("leave");
         if (currentUserId) {
           removeParticipant(connectedChannelId, currentUserId);
         } else {
@@ -960,6 +961,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         return false;
       }
 
+      playPresenceCue("join");
       voiceLog("join completed", { channelId, serverId, participantsCount: useVoiceStore.getState().participantsByChannel[channelId]?.length ?? 0 });
       return true;
     },
@@ -979,6 +981,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       setConnectedChannel,
       socket,
       stopLocalStream,
+      playPresenceCue,
       waitForParticipantsSnapshot,
       waitForSocketOpen,
     ],
@@ -988,6 +991,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     const channelId = connectedChannelId;
     if (channelId) {
       sendGatewayEvent("VOICE_LEAVE", { channel_id: channelId });
+      playPresenceCue("leave");
       if (currentUserId) {
         removeParticipant(channelId, currentUserId);
       } else {
@@ -1015,6 +1019,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     sendGatewayEvent,
     setConnectedChannel,
     stopLocalStream,
+    playPresenceCue,
   ]);
 
   const toggleMuted = useCallback(() => {

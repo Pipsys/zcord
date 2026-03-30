@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import uuid
 from datetime import timedelta
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import magic
 from fastapi import HTTPException, UploadFile, status
@@ -18,6 +18,7 @@ from app.models.message import Message
 
 settings = get_settings()
 AVATAR_MAX_BYTES = 25 * 1024 * 1024
+PUBLIC_MEDIA_PREFIXES = ("avatars/", "server-icons/", "server-banners/")
 ALLOWED_AVATAR_MIME_TYPES = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -81,6 +82,25 @@ class MediaService:
             secure=public_secure,
             region=settings.minio_region,
         )
+        self.public_api_base_url = self._resolve_public_api_base_url(public_endpoint, public_secure)
+
+    def _resolve_public_api_base_url(self, fallback_endpoint: str, fallback_secure: bool) -> str:
+        configured = settings.public_api_base_url.strip() if isinstance(settings.public_api_base_url, str) else ""
+        if configured:
+            return configured.rstrip("/")
+
+        # Development default: backend usually runs on localhost:8000.
+        if settings.env.lower() == "development":
+            return "http://localhost:8000"
+
+        raw_public_endpoint = settings.minio_public_endpoint.strip() if isinstance(settings.minio_public_endpoint, str) else ""
+        if "://" in raw_public_endpoint:
+            parsed = urlsplit(raw_public_endpoint)
+            if parsed.scheme and parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+        scheme = "https" if fallback_secure else "http"
+        return f"{scheme}://{fallback_endpoint}".rstrip("/")
 
     def ensure_bucket(self) -> None:
         if not self.client.bucket_exists(settings.minio_bucket):
@@ -262,9 +282,16 @@ class MediaService:
             return None
         if "://" in stored_value:
             return stored_value
-        if stored_value.startswith(("avatars/", "server-icons/", "server-banners/")):
-            return self.presigned_download_url(stored_value, expires_seconds=7 * 24 * 60 * 60)
+        if self.is_public_media_key(stored_value):
+            return self.public_media_url(stored_value)
         return self.presigned_download_url(stored_value)
+
+    def is_public_media_key(self, object_key: str) -> bool:
+        return isinstance(object_key, str) and object_key.startswith(PUBLIC_MEDIA_PREFIXES)
+
+    def public_media_url(self, object_key: str) -> str:
+        encoded = quote(object_key, safe="/")
+        return f"{self.public_api_base_url}{settings.api_prefix}/media/public/{encoded}"
 
     def delete_object(self, object_key: str) -> None:
         if not object_key or "://" in object_key:

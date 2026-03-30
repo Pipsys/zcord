@@ -1,4 +1,4 @@
-export type Locale = "ru" | "en";
+﻿export type Locale = "ru" | "en";
 
 const ru = {
   "common.loading": "Загрузка...",
@@ -270,6 +270,19 @@ const ru = {
   "settings.avatar_upload_success_title": "Аватар обновлен",
   "settings.avatar_upload_success_desc": "Новый аватар сохранен и виден другим пользователям.",
   "settings.avatar_upload_failed_title": "Не удалось загрузить аватар",
+  "settings.security": "Безопасность",
+  "settings.current_password": "Текущий пароль",
+  "settings.new_password": "Новый пароль",
+  "settings.confirm_password": "Повторите пароль",
+  "settings.change_password": "Изменить пароль",
+  "settings.save_profile": "Сохранить профиль",
+  "settings.profile_no_changes": "Изменений нет",
+  "settings.profile_updated_title": "Профиль обновлен",
+  "settings.profile_updated_desc": "Имя и email успешно обновлены.",
+  "settings.password_required": "Заполните все поля пароля",
+  "settings.password_mismatch": "Пароли не совпадают",
+  "settings.password_changed_title": "Пароль изменен",
+  "settings.password_changed_desc": "Новый пароль успешно сохранен.",
 } as const;
 
 type MessageKey = keyof typeof ru;
@@ -545,6 +558,19 @@ const en: MessageCatalog = {
   "settings.avatar_upload_success_title": "Avatar updated",
   "settings.avatar_upload_success_desc": "Your new avatar is saved and visible to other users.",
   "settings.avatar_upload_failed_title": "Failed to upload avatar",
+  "settings.security": "Security",
+  "settings.current_password": "Current password",
+  "settings.new_password": "New password",
+  "settings.confirm_password": "Confirm password",
+  "settings.change_password": "Change password",
+  "settings.save_profile": "Save profile",
+  "settings.profile_no_changes": "No changes to save",
+  "settings.profile_updated_title": "Profile updated",
+  "settings.profile_updated_desc": "Display name and email were updated.",
+  "settings.password_required": "Please fill in all password fields",
+  "settings.password_mismatch": "Passwords do not match",
+  "settings.password_changed_title": "Password changed",
+  "settings.password_changed_desc": "Your new password has been saved.",
 };
 
 export type TranslationKey = MessageKey;
@@ -554,3 +580,4 @@ export const dictionaries: Record<Locale, MessageCatalog> = {
   ru,
   en,
 };
+

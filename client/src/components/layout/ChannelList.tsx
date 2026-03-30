@@ -102,11 +102,14 @@ export const ChannelList = ({
   const activeServerId = useServerStore((state) => state.activeServerId);
   const participantsByChannel = useVoiceStore((state) => state.participantsByChannel);
   const [panelWidth, setPanelWidth] = useState<number>(() => readStoredChannelListWidth());
+  const [recentlyConnectedChannelId, setRecentlyConnectedChannelId] = useState<string | null>(null);
   const resizeStateRef = useRef<{ active: boolean; startX: number; startWidth: number }>({
     active: false,
     startX: 0,
     startWidth: CHANNEL_LIST_DEFAULT_WIDTH,
   });
+  const previousConnectedVoiceChannelRef = useRef<string | null>(null);
+  const connectAnimationTimeoutRef = useRef<number | null>(null);
 
   const [context, setContext] = useState<{ visible: boolean; x: number; y: number; channelId: string | null }>({
     visible: false,
@@ -208,6 +211,32 @@ export const ChannelList = ({
     };
   }, [stopResize]);
 
+  useEffect(() => {
+    const previousChannelId = previousConnectedVoiceChannelRef.current;
+    if (connectedVoiceChannelId && previousChannelId !== connectedVoiceChannelId) {
+      setRecentlyConnectedChannelId(connectedVoiceChannelId);
+      if (connectAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(connectAnimationTimeoutRef.current);
+      }
+      connectAnimationTimeoutRef.current = window.setTimeout(() => {
+        setRecentlyConnectedChannelId((value) => (value === connectedVoiceChannelId ? null : value));
+        connectAnimationTimeoutRef.current = null;
+      }, 780);
+    }
+    if (!connectedVoiceChannelId) {
+      setRecentlyConnectedChannelId(null);
+    }
+    previousConnectedVoiceChannelRef.current = connectedVoiceChannelId;
+  }, [connectedVoiceChannelId]);
+
+  useEffect(() => {
+    return () => {
+      if (connectAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(connectAnimationTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const actions = useMemo(
     () => [
       {
@@ -227,10 +256,11 @@ export const ChannelList = ({
   const renderVoiceChannel = (channel: Channel) => {
     const active = activeChannelId === channel.id;
     const connected = connectedVoiceChannelId === channel.id;
+    const justConnected = recentlyConnectedChannelId === channel.id;
     const channelParticipants = voiceParticipantsByChannel[channel.id] ?? [];
 
     return (
-      <div key={channel.id} className="rounded-md">
+      <div key={channel.id} className={`rounded-md ${justConnected ? "voice-channel-join-animate" : ""}`}>
         <div
           className={`group flex h-9 items-center gap-2 rounded-md px-2.5 text-[15px] leading-5 transition-colors duration-150 ${
             active
@@ -417,7 +447,11 @@ export const ChannelList = ({
 
       <footer className="border-t border-black/35 bg-[#232428] px-2 py-2">
         {connectedVoiceChannelId ? (
-          <div className="mb-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2">
+          <div
+            className={`mb-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2 ${
+              recentlyConnectedChannelId === connectedVoiceChannelId ? "voice-connected-card-enter" : ""
+            }`}
+          >
             <div className="flex items-center justify-between gap-2">
               <p className="truncate text-[12px] font-semibold leading-4 text-[#8ee6a8]">{t("voice.connected")}</p>
               <span
