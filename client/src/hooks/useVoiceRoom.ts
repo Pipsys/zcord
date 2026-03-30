@@ -1743,9 +1743,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       return;
     }
 
-    const now = Date.now();
-    const retryIntervalMs = 2_500;
-    const hardResetAfterAttempts = 3;
+    // Manual-only screen recovery:
+    // We intentionally do not auto-trigger renegotiation here because repeated
+    // retries can create unstable offer/answer loops in Electron WebRTC.
     const activeSharers = new Set(
       participants
         .filter((participant) => participant.user_id !== currentUserId && Boolean(participant.screen_sharing))
@@ -1758,31 +1758,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         screenRecoveryCountersRef.current.delete(trackedUserId);
       }
     }
-
-    for (const remoteUserId of activeSharers) {
-      if (remoteScreenStreams[remoteUserId]?.getVideoTracks().some((track) => track.readyState === "live")) {
-        screenRecoveryAttemptsRef.current.delete(remoteUserId);
-        screenRecoveryCountersRef.current.delete(remoteUserId);
-        continue;
-      }
-
-      const lastAttemptAt = screenRecoveryAttemptsRef.current.get(remoteUserId) ?? 0;
-      if (now - lastAttemptAt < retryIntervalMs) {
-        continue;
-      }
-
-      screenRecoveryAttemptsRef.current.set(remoteUserId, now);
-      const attempts = (screenRecoveryCountersRef.current.get(remoteUserId) ?? 0) + 1;
-      const forceReset = attempts >= hardResetAfterAttempts;
-      screenRecoveryCountersRef.current.set(remoteUserId, forceReset ? 0 : attempts);
-      void recoverRemoteScreen(remoteUserId, {
-        forceReset,
-        reason: forceReset ? "screen-recovery-hard-reset" : "screen-recovery-renegotiate",
-      });
-      const state = peersRef.current.get(remoteUserId)?.connectionState ?? "none";
-      voiceWarn("screen recovery requested", { remoteUserId, state, attempts, forceReset });
-    }
-  }, [connectedChannelId, currentUserId, participants, recoverRemoteScreen, remoteScreenStreams]);
+  }, [connectedChannelId, currentUserId, participants]);
 
   useEffect(() => {
     if (!connectedChannelId) {

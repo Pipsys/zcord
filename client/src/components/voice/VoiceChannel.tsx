@@ -121,6 +121,7 @@ export const VoiceChannel = ({
   const [screenPickerPreviewLoading, setScreenPickerPreviewLoading] = useState(false);
   const [screenPickerPreviewFailed, setScreenPickerPreviewFailed] = useState(false);
   const [recoveringScreenByUserId, setRecoveringScreenByUserId] = useState<Record<string, boolean>>({});
+  const [joinedScreenByUserId, setJoinedScreenByUserId] = useState<Record<string, boolean>>({});
   const screenPickerPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenPickerPreviewRequestIdRef = useRef(0);
 
@@ -172,20 +173,74 @@ export const VoiceChannel = ({
     return remoteScreenStreams[participantUserId] ?? null;
   };
 
+  useEffect(() => {
+    if (!connected) {
+      setJoinedScreenByUserId({});
+      setRecoveringScreenByUserId({});
+      return;
+    }
+
+    const activeSharers = new Set(
+      visibleParticipants
+        .filter((participant) => participant.user_id !== user?.id && Boolean(participant.screen_sharing))
+        .map((participant) => participant.user_id),
+    );
+
+    setJoinedScreenByUserId((current) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      for (const [userId, joined] of Object.entries(current)) {
+        if (joined && activeSharers.has(userId)) {
+          next[userId] = true;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+
+    setRecoveringScreenByUserId((current) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      for (const [userId, recovering] of Object.entries(current)) {
+        if (recovering && activeSharers.has(userId)) {
+          next[userId] = true;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [connected, visibleParticipants, user?.id]);
+
   const screenParticipants = useMemo(
     () =>
       visibleParticipants.filter((participant) => {
-        return Boolean(resolveScreenStream(participant.user_id));
+        const stream = resolveScreenStream(participant.user_id);
+        if (!stream) {
+          return false;
+        }
+        if (participant.user_id === user?.id) {
+          return true;
+        }
+        return Boolean(joinedScreenByUserId[participant.user_id]);
       }),
-    [remoteScreenStreams, user?.id, visibleParticipants, localScreenStream],
+    [joinedScreenByUserId, localScreenStream, remoteScreenStreams, user?.id, visibleParticipants],
   );
 
   const fullscreenStream = useMemo(() => {
     if (!fullscreenUserId) {
       return null;
     }
-    return resolveScreenStream(fullscreenUserId);
-  }, [fullscreenUserId, remoteScreenStreams, user?.id, localScreenStream]);
+    const stream = resolveScreenStream(fullscreenUserId);
+    if (!stream) {
+      return null;
+    }
+    if (fullscreenUserId === user?.id || joinedScreenByUserId[fullscreenUserId]) {
+      return stream;
+    }
+    return null;
+  }, [fullscreenUserId, joinedScreenByUserId, localScreenStream, remoteScreenStreams, user?.id]);
 
   const participantTiles = useMemo(() => {
     return visibleParticipants.map((participant) => {
@@ -193,6 +248,7 @@ export const VoiceChannel = ({
       const isCurrentUser = participant.user_id === user?.id;
       const isSpeaking = speakingSet.has(participant.user_id);
       const screenStream = resolveScreenStream(participant.user_id);
+      const canViewScreen = isCurrentUser || Boolean(joinedScreenByUserId[participant.user_id]);
       const isSharingScreen = Boolean(participant.screen_sharing || (isCurrentUser && screenSharing) || screenStream);
       const avatarSource = isCurrentUser ? participant.avatar_url ?? user?.avatar_url ?? null : participant.avatar_url ?? null;
       const isMuted = isCurrentUser ? muted : participant.muted;
@@ -206,11 +262,12 @@ export const VoiceChannel = ({
         isMuted,
         isDeafened,
         screenStream,
+        canViewScreen,
         isSharingScreen,
         avatarSource,
       };
     });
-  }, [deafened, muted, resolveScreenStream, screenSharing, speakingSet, user?.avatar_url, user?.id, user?.username, visibleParticipants]);
+  }, [deafened, joinedScreenByUserId, muted, resolveScreenStream, screenSharing, speakingSet, user?.avatar_url, user?.id, user?.username, visibleParticipants]);
 
   const resolveGridClass = (count: number): string => {
     if (count <= 1) {
@@ -279,12 +336,10 @@ export const VoiceChannel = ({
     if (!fullscreenUserId) {
       return;
     }
-
-    const hasStream = visibleParticipants.some((participant) => participant.user_id === fullscreenUserId && resolveScreenStream(participant.user_id));
-    if (!hasStream) {
+    if (!fullscreenStream) {
       setFullscreenUserId(null);
     }
-  }, [fullscreenUserId, visibleParticipants, remoteScreenStreams, localScreenStream, user?.id]);
+  }, [fullscreenStream, fullscreenUserId]);
 
   useEffect(() => {
     if (!fullscreenUserId) {
@@ -491,12 +546,24 @@ export const VoiceChannel = ({
 
   const handleRecoverScreenShare = useCallback(
     async (remoteUserId: string): Promise<void> => {
-      if (!remoteUserId || recoveringScreenByUserId[remoteUserId]) {
+      if (!remoteUserId || remoteUserId === user?.id) {
         return;
       }
+      setJoinedScreenByUserId((current) => ({ ...current, [remoteUserId]: true }));
+
+      if (recoveringScreenByUserId[remoteUserId]) {
+        return;
+      }
+
+      const existingStream = remoteScreenStreams[remoteUserId];
+      const hasLiveVideoTrack = Boolean(existingStream?.getVideoTracks().some((track) => track.readyState === "live"));
+      if (hasLiveVideoTrack) {
+        return;
+      }
+
       setRecoveringScreenByUserId((current) => ({ ...current, [remoteUserId]: true }));
       try {
-        await onRecoverScreenShare(remoteUserId, { forceReset: true });
+        await onRecoverScreenShare(remoteUserId, { forceReset: false });
       } finally {
         setRecoveringScreenByUserId((current) => {
           const next = { ...current };
@@ -505,7 +572,7 @@ export const VoiceChannel = ({
         });
       }
     },
-    [onRecoverScreenShare, recoveringScreenByUserId],
+    [onRecoverScreenShare, recoveringScreenByUserId, remoteScreenStreams, user?.id],
   );
 
   const startScreenPickerPreview = useCallback(
@@ -673,7 +740,7 @@ export const VoiceChannel = ({
                 screenShareTiles.length === 1 ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2",
               )}
             >
-              {screenShareTiles.map(({ participant, name, isCurrentUser, isSpeaking, isSharingScreen, isMuted, isDeafened }) => (
+              {screenShareTiles.map(({ participant, name, isCurrentUser, isSpeaking, isSharingScreen, isMuted, isDeafened, avatarSource, canViewScreen, screenStream }) => (
                 <article
                   key={participant.user_id}
                   className={clsx(
@@ -681,15 +748,33 @@ export const VoiceChannel = ({
                     isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                   )}
                 >
-                  <video
-                    ref={(element) => {
-                      videoRefs.current[participant.user_id] = element;
-                    }}
-                    autoPlay
-                    playsInline
-                    muted={isCurrentUser}
-                    className="h-full w-full bg-black object-contain"
-                  />
+                  {screenStream && canViewScreen ? (
+                    <video
+                      ref={(element) => {
+                        videoRefs.current[participant.user_id] = element;
+                      }}
+                      autoPlay
+                      playsInline
+                      muted={isCurrentUser}
+                      className="h-full w-full bg-black object-contain"
+                    />
+                  ) : (
+                    <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
+                      <div
+                        className={clsx(
+                          "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
+                          isSpeaking
+                            ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.28)]"
+                            : "border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.28)]",
+                        )}
+                      >
+                        <span className="relative inline-flex">
+                          <Avatar src={avatarSource} label={name} online={!isMuted && !isDeafened} size="xl" />
+                          <VoiceAvatarStateBadge size="xl" muted={isMuted} deafened={isDeafened} />
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
 
@@ -704,19 +789,37 @@ export const VoiceChannel = ({
                     </div>
                   ) : null}
 
-                  <button
-                    onClick={() => setFullscreenUserId(participant.user_id)}
-                    className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-100 transition hover:bg-black/70"
-                  >
-                    {t("voice.expand_stream")}
-                  </button>
+                  {screenStream && canViewScreen ? (
+                    <button
+                      onClick={() => setFullscreenUserId(participant.user_id)}
+                      className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-100 transition hover:bg-black/70"
+                    >
+                      {t("voice.expand_stream")}
+                    </button>
+                  ) : null}
+
+                  {isSharingScreen && !isCurrentUser && !canViewScreen ? (
+                    <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/20 via-black/40 to-black/60 backdrop-blur-[4px]">
+                      <button
+                        onClick={() => {
+                          void handleRecoverScreenShare(participant.user_id);
+                        }}
+                        className="rounded-lg border border-[#7a86ff]/70 bg-[#5865f2]/90 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(22,27,49,0.5)] transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
+                        disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
+                      >
+                        {recoveringScreenByUserId[participant.user_id]
+                          ? t("voice.stream_connecting")
+                          : t("voice.join_stream")}
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>
 
             {regularVoiceTiles.length > 0 ? (
               <div className={clsx("grid auto-rows-fr gap-3", regularGridClass)}>
-                {regularVoiceTiles.map(({ participant, name, isSpeaking, isMuted, isDeafened, avatarSource }) => (
+                {regularVoiceTiles.map(({ participant, name, isCurrentUser, isSpeaking, isMuted, isDeafened, avatarSource, isSharingScreen, canViewScreen }) => (
                   <article
                     key={participant.user_id}
                     className={clsx(
@@ -743,6 +846,21 @@ export const VoiceChannel = ({
                       <span className="truncate">{name}</span>
                       <VoiceStateIndicators className="shrink-0" muted={isMuted} deafened={isDeafened} />
                     </div>
+                    {isSharingScreen && !isCurrentUser && !canViewScreen ? (
+                      <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/20 via-black/40 to-black/60 backdrop-blur-[4px]">
+                        <button
+                          onClick={() => {
+                            void handleRecoverScreenShare(participant.user_id);
+                          }}
+                          className="rounded-lg border border-[#7a86ff]/70 bg-[#5865f2]/90 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(22,27,49,0.5)] transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
+                          disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
+                        >
+                          {recoveringScreenByUserId[participant.user_id]
+                            ? t("voice.stream_connecting")
+                            : t("voice.join_stream")}
+                        </button>
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -750,7 +868,7 @@ export const VoiceChannel = ({
           </div>
         ) : (
           <div className={clsx("grid h-full min-h-0 auto-rows-fr gap-3", tileGridClass)}>
-            {participantTiles.map(({ participant, name, isCurrentUser, isSpeaking, isMuted, isDeafened, isSharingScreen, avatarSource, screenStream }) => (
+            {participantTiles.map(({ participant, name, isCurrentUser, isSpeaking, isMuted, isDeafened, isSharingScreen, avatarSource, screenStream, canViewScreen }) => (
               <article
                 key={participant.user_id}
                 className={clsx(
@@ -758,7 +876,7 @@ export const VoiceChannel = ({
                   isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                 )}
               >
-                {screenStream ? (
+                {screenStream && canViewScreen ? (
                   <video
                     ref={(element) => {
                       videoRefs.current[participant.user_id] = element;
@@ -799,7 +917,7 @@ export const VoiceChannel = ({
                   </div>
                 ) : null}
 
-                {screenStream ? (
+                {screenStream && canViewScreen ? (
                   <button
                     onClick={() => setFullscreenUserId(participant.user_id)}
                     className="absolute right-2 bottom-2 rounded-md border border-white/20 bg-black/45 px-2 py-1 text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
@@ -808,7 +926,7 @@ export const VoiceChannel = ({
                   </button>
                 ) : null}
 
-                {!screenStream && isSharingScreen && !isCurrentUser ? (
+                {isSharingScreen && !isCurrentUser && (!screenStream || !canViewScreen) ? (
                   <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/20 via-black/40 to-black/60 backdrop-blur-[4px]">
                     <button
                       onClick={() => {
