@@ -470,10 +470,15 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   }, [connectedChannelId, currentUserId, participants, playPresenceCue]);
 
   const buildAudioConstraints = useCallback((deviceId?: string): MediaTrackConstraints => {
-    const constraints: MediaTrackConstraints = {
+    const constraints: MediaTrackConstraints & Record<string, unknown> = {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
+      googEchoCancellation: true,
+      googNoiseSuppression: true,
+      googAutoGainControl: true,
+      googHighpassFilter: true,
+      googTypingNoiseDetection: true,
     };
     if (deviceId && deviceId !== DEFAULT_INPUT_DEVICE_ID) {
       constraints.deviceId = { exact: deviceId };
@@ -1088,9 +1093,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           streamId: stream.id,
         });
         const screenStream = remoteScreenStreamsRef.current[remoteUserId];
-        const isScreenAudio = Boolean(screenStream && screenStream.id === stream.id);
+        const isScreenAudio =
+          Boolean(screenStream && screenStream.id === stream.id) || stream.getVideoTracks().length > 0;
         if (isScreenAudio) {
-          attachRemoteScreenAudioTrack(event.track, screenStream);
+          attachRemoteScreenAudioTrack(event.track, screenStream ?? stream);
           return;
         }
         attachRemoteAudioTrack(event.track);

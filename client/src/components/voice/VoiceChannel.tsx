@@ -122,8 +122,10 @@ export const VoiceChannel = ({
   const [screenPickerPreviewFailed, setScreenPickerPreviewFailed] = useState(false);
   const [recoveringScreenByUserId, setRecoveringScreenByUserId] = useState<Record<string, boolean>>({});
   const [joinedScreenByUserId, setJoinedScreenByUserId] = useState<Record<string, boolean>>({});
+  const [shareClockMs, setShareClockMs] = useState<number>(() => Date.now());
   const screenPickerPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenPickerPreviewRequestIdRef = useRef(0);
+  const missingScreenSinceByUserIdRef = useRef<Map<string, number>>(new Map());
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const speakingTimerRef = useRef<number | null>(null);
@@ -175,8 +177,19 @@ export const VoiceChannel = ({
 
   useEffect(() => {
     if (!connected) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setShareClockMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [connected]);
+
+  useEffect(() => {
+    if (!connected) {
       setJoinedScreenByUserId({});
       setRecoveringScreenByUserId({});
+      missingScreenSinceByUserIdRef.current.clear();
       return;
     }
 
@@ -249,7 +262,19 @@ export const VoiceChannel = ({
       const isSpeaking = speakingSet.has(participant.user_id);
       const screenStream = resolveScreenStream(participant.user_id);
       const canViewScreen = isCurrentUser || Boolean(joinedScreenByUserId[participant.user_id]);
-      const isSharingScreen = Boolean(participant.screen_sharing || (isCurrentUser && screenSharing) || screenStream);
+      const hasLiveScreenStream = Boolean(screenStream?.getVideoTracks().some((track) => track.readyState === "live"));
+      const missingSinceMap = missingScreenSinceByUserIdRef.current;
+      if (!isCurrentUser) {
+        if (hasLiveScreenStream || !participant.screen_sharing) {
+          missingSinceMap.delete(participant.user_id);
+        } else if (!missingSinceMap.has(participant.user_id)) {
+          missingSinceMap.set(participant.user_id, shareClockMs);
+        }
+      }
+      const missingSince = missingSinceMap.get(participant.user_id);
+      const staleSharingFlag = Boolean(!isCurrentUser && participant.screen_sharing && missingSince && shareClockMs - missingSince > 8_000);
+      const claimsSharing = isCurrentUser ? screenSharing : Boolean(participant.screen_sharing && !staleSharingFlag);
+      const isSharingScreen = Boolean(claimsSharing || hasLiveScreenStream);
       const avatarSource = isCurrentUser ? participant.avatar_url ?? user?.avatar_url ?? null : participant.avatar_url ?? null;
       const isMuted = isCurrentUser ? muted : participant.muted;
       const isDeafened = isCurrentUser ? deafened : participant.deafened;
@@ -267,7 +292,7 @@ export const VoiceChannel = ({
         avatarSource,
       };
     });
-  }, [deafened, joinedScreenByUserId, muted, resolveScreenStream, screenSharing, speakingSet, user?.avatar_url, user?.id, user?.username, visibleParticipants]);
+  }, [deafened, joinedScreenByUserId, muted, resolveScreenStream, screenSharing, shareClockMs, speakingSet, user?.avatar_url, user?.id, user?.username, visibleParticipants]);
 
   const resolveGridClass = (count: number): string => {
     if (count <= 1) {
@@ -557,7 +582,8 @@ export const VoiceChannel = ({
 
       const existingStream = remoteScreenStreams[remoteUserId];
       const hasLiveVideoTrack = Boolean(existingStream?.getVideoTracks().some((track) => track.readyState === "live"));
-      if (hasLiveVideoTrack) {
+      const hasLiveAudioTrack = Boolean(existingStream?.getAudioTracks().some((track) => track.readyState === "live"));
+      if (hasLiveVideoTrack && hasLiveAudioTrack) {
         return;
       }
 
