@@ -19,11 +19,11 @@ export const ContextMenu = ({ visible, x, y, actions }: ContextMenuProps): React
   }
 
   return (
-    <div className="fixed z-50 min-w-44 rounded-md border border-white/10 bg-black/30 p-1 shadow-lg shadow-black/40 backdrop-blur-sm" style={{ left: x, top: y }}>
+    <div className="popup-menu fixed z-50 min-w-44 p-1" style={{ left: x, top: y }}>
       {actions.map((action) => (
         <button
           key={action.id}
-          className="block w-full rounded px-3 py-2 text-left text-sm text-paw-text-secondary transition hover:bg-white/10 hover:text-paw-text-primary"
+          className="popup-menu-item block w-full px-3 py-2 text-left text-sm"
           onClick={action.onClick}
         >
           {action.label}

@@ -302,6 +302,8 @@ interface ScreenShareSourcePayload {
   name: string;
   displayId: string;
   kind: "screen" | "window";
+  thumbnailDataUrl: string | null;
+  appIconDataUrl: string | null;
 }
 
 let preferredDisplaySourceId: string | null = null;
@@ -309,17 +311,24 @@ let preferredDisplaySourceId: string | null = null;
 const getScreenShareSources = async () => {
   return desktopCapturer.getSources({
     types: ["screen", "window"],
-    fetchWindowIcons: false,
-    thumbnailSize: { width: 0, height: 0 },
+    fetchWindowIcons: true,
+    thumbnailSize: { width: 640, height: 360 },
   });
 };
 
-const mapScreenShareSource = (source: { id: string; name: string; display_id: string }): ScreenShareSourcePayload => ({
-  id: source.id,
-  name: source.name,
-  displayId: source.display_id,
-  kind: source.id.startsWith("screen:") ? "screen" : "window",
-});
+const mapScreenShareSource = (source: Awaited<ReturnType<typeof getScreenShareSources>>[number]): ScreenShareSourcePayload => {
+  const thumbnailDataUrl = source.thumbnail.isEmpty() ? null : source.thumbnail.toDataURL();
+  const appIconDataUrl = source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null;
+
+  return {
+    id: source.id,
+    name: source.name,
+    displayId: source.display_id,
+    kind: source.id.startsWith("screen:") ? "screen" : "window",
+    thumbnailDataUrl,
+    appIconDataUrl,
+  };
+};
 
 const createWindow = async (): Promise<void> => {
   mainWindow = new BrowserWindow({

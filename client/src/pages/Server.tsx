@@ -9,6 +9,7 @@ import {
   useDeleteMessageMutation,
   useMessagesQuery,
   useServersQuery,
+  useUpdateChannelMutation,
   useUpdateServerMutation,
   useUpdateMessageMutation,
   useUploadServerBannerMutation,
@@ -32,7 +33,7 @@ import { useChannelStore } from "@/store/channelStore";
 import { useMessageStore } from "@/store/messageStore";
 import { useServerStore } from "@/store/serverStore";
 import { useUiStore } from "@/store/uiStore";
-import type { Message } from "@/types";
+import type { Channel, Message } from "@/types";
 
 const VoiceChannel = lazy(() => import("@/components/voice/VoiceChannel").then((module) => ({ default: module.VoiceChannel })));
 const SERVER_ICON_MAX_BYTES = 10 * 1024 * 1024;
@@ -59,6 +60,8 @@ const ServerPage = () => {
   const [draftPreset, setDraftPreset] = useState<{ key: string; text: string; mode?: "replace" | "append" } | null>(null);
   const [pendingDeleteMessage, setPendingDeleteMessage] = useState<Message | null>(null);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
+  const [renameChannelTarget, setRenameChannelTarget] = useState<{ id: string; name: string; type: Channel["type"] } | null>(null);
+  const [renameChannelDraft, setRenameChannelDraft] = useState("");
   const [serverNameDraft, setServerNameDraft] = useState("");
   const [serverIconFile, setServerIconFile] = useState<File | null>(null);
   const [serverIconPreview, setServerIconPreview] = useState<string | null>(null);
@@ -126,6 +129,7 @@ const ServerPage = () => {
   const updateMessage = useUpdateMessageMutation();
   const deleteMessage = useDeleteMessageMutation();
   const createChannel = useCreateChannelMutation();
+  const updateChannel = useUpdateChannelMutation();
   const updateServer = useUpdateServerMutation();
   const uploadServerIcon = useUploadServerIconMutation();
   const deleteServerIcon = useDeleteServerIconMutation();
@@ -336,6 +340,60 @@ const ServerPage = () => {
     }
   };
 
+  const openRenameChannel = (channelId: string) => {
+    const channel = storedChannels.find((item) => item.id === channelId);
+    if (!channel) {
+      return;
+    }
+    setRenameChannelTarget({ id: channel.id, name: channel.name, type: channel.type });
+    setRenameChannelDraft(channel.name);
+  };
+
+  const closeRenameChannel = () => {
+    setRenameChannelTarget(null);
+    setRenameChannelDraft("");
+  };
+
+  const saveRenameChannel = async () => {
+    if (!renameChannelTarget || !serverId) {
+      closeRenameChannel();
+      return;
+    }
+
+    const nextName = renameChannelDraft.trim();
+    if (nextName.length < 1 || nextName.length > 100) {
+      pushToast(t("channels.rename_invalid_title"), t("channels.rename_invalid_desc"));
+      return;
+    }
+
+    if (nextName === renameChannelTarget.name) {
+      closeRenameChannel();
+      return;
+    }
+
+    try {
+      const updated = await updateChannel.mutateAsync({
+        channelId: renameChannelTarget.id,
+        serverId,
+        name: nextName,
+      });
+      setChannels(
+        storedChannels.map((channel) =>
+          channel.id === updated.id
+            ? {
+                ...channel,
+                name: updated.name,
+              }
+            : channel,
+        ),
+      );
+      pushToast(t("channels.rename_success"), updated.type === "text" ? `#${updated.name}` : updated.name);
+      closeRenameChannel();
+    } catch (error) {
+      pushToast(t("channels.rename_failed"), error instanceof Error ? error.message : t("common.unknown_error"));
+    }
+  };
+
   const handleVoiceJoin = async (channelId: string) => {
     setActiveChannel(channelId);
     const joined = await voiceRoom.join(channelId, serverId ?? null);
@@ -344,12 +402,13 @@ const ServerPage = () => {
     }
   };
 
-  const handleToggleScreenShare = async () => {
+  const handleToggleScreenShare = async (preferredSourceId?: string): Promise<boolean> => {
     const wasSharing = voiceRoom.screenSharing;
-    const ok = await voiceRoom.toggleScreenShare();
+    const ok = await voiceRoom.toggleScreenShare(preferredSourceId);
     if (!ok && !wasSharing) {
       pushToast(t("voice.screen_share_failed"), t("voice.screen_share_failed_desc"));
     }
+    return ok;
   };
 
   const copyInvite = async () => {
@@ -572,6 +631,7 @@ const ServerPage = () => {
           void handleVoiceJoin(channelId);
         }}
         onLeaveVoice={() => void voiceRoom.leave()}
+        onRenameChannel={openRenameChannel}
         onCreateTextChannel={() => void handleCreateTextChannel()}
         onCreateVoiceChannel={() => void handleCreateVoiceChannel()}
         onInvite={() => void copyInvite()}
@@ -646,6 +706,7 @@ const ServerPage = () => {
                 remoteScreenStreams={voiceRoom.remoteScreenStreams}
                 localAudioStream={voiceRoom.localAudioStream}
                 localScreenStream={voiceRoom.localScreenStream}
+                screenShareFps={voiceRoom.screenShareFps}
                 muted={voiceRoom.muted}
                 deafened={voiceRoom.deafened}
                 screenSharing={voiceRoom.screenSharing}
@@ -658,17 +719,11 @@ const ServerPage = () => {
                 onLeave={() => void voiceRoom.leave()}
                 onToggleMute={voiceRoom.toggleMuted}
                 onToggleDeafen={voiceRoom.toggleDeafened}
-                onToggleScreenShare={() => void handleToggleScreenShare()}
+                onToggleScreenShare={handleToggleScreenShare}
                 onVolumeChange={voiceRoom.setVolume}
-                onInputDeviceChange={(deviceId) => {
-                  void voiceRoom.setInputDevice(deviceId);
-                }}
-                onRefreshScreenSources={() => {
-                  void voiceRoom.refreshScreenSources();
-                }}
-                onScreenSourceChange={(sourceId) => {
-                  void voiceRoom.setScreenSource(sourceId);
-                }}
+                onInputDeviceChange={voiceRoom.setInputDevice}
+                onRefreshScreenSources={voiceRoom.refreshScreenSources}
+                onScreenSourceChange={voiceRoom.setScreenSource}
               />
             </Suspense>
           ) : null}
@@ -710,6 +765,37 @@ const ServerPage = () => {
       </section>
 
       <MemberList />
+
+      <Modal open={renameChannelTarget !== null} title={t("channels.rename_title")} onClose={closeRenameChannel}>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("channels.rename_label")}</label>
+            <input
+              value={renameChannelDraft}
+              onChange={(event) => setRenameChannelDraft(event.target.value)}
+              placeholder={
+                renameChannelTarget?.type === "voice" ? t("channels.rename_placeholder_voice") : t("channels.rename_placeholder_text")
+              }
+              className="popup-input h-10 w-full px-3 text-sm"
+              maxLength={100}
+              autoFocus
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button className="popup-btn-secondary px-3 py-1.5 text-xs shadow-none" onClick={closeRenameChannel}>
+              {t("message.cancel")}
+            </Button>
+            <Button
+              className="popup-btn-primary px-3 py-1.5 text-xs shadow-none"
+              onClick={() => void saveRenameChannel()}
+              disabled={updateChannel.isPending}
+            >
+              {updateChannel.isPending ? t("server.settings_saving") : t("channels.rename_save")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={serverSettingsOpen} title={t("server.settings_title")} onClose={closeServerSettings}>
         <div className="space-y-4">
@@ -774,16 +860,16 @@ const ServerPage = () => {
               value={serverNameDraft}
               onChange={(event) => setServerNameDraft(event.target.value)}
               placeholder={t("server.settings_name_placeholder")}
-              className="h-10 w-full rounded-md border border-white/12 bg-black/25 px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none"
+              className="popup-input h-10 w-full px-3 text-sm"
               maxLength={100}
             />
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button className="bg-black/25 px-3 py-1.5 text-xs text-paw-text-secondary shadow-none hover:bg-black/35" onClick={closeServerSettings}>
+            <Button className="popup-btn-secondary px-3 py-1.5 text-xs shadow-none" onClick={closeServerSettings}>
               {t("message.cancel")}
             </Button>
-            <Button className="px-3 py-1.5 text-xs" onClick={() => void saveServerSettings()} disabled={isSavingServerSettings}>
+            <Button className="popup-btn-primary px-3 py-1.5 text-xs shadow-none" onClick={() => void saveServerSettings()} disabled={isSavingServerSettings}>
               {isSavingServerSettings ? t("server.settings_saving") : t("server.settings_save")}
             </Button>
           </div>

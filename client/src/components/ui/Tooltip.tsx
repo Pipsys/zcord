@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
+import { useEffect, useMemo, useRef, useState, type PropsWithChildren, type ReactNode } from "react";
+import { clsx } from "clsx";
 import { createPortal } from "react-dom";
 
 interface TooltipProps extends PropsWithChildren {
-  label: string;
+  label?: string;
+  content?: ReactNode;
   side?: "bottom" | "right";
+  popupClassName?: string;
 }
 
-export const Tooltip = ({ label, side = "bottom", children }: TooltipProps) => {
+export const Tooltip = ({ label, content, side = "bottom", popupClassName, children }: TooltipProps) => {
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const tooltipContent = content ?? label ?? "";
+  const hasTooltipContent = (typeof tooltipContent === "string" ? tooltipContent.trim().length > 0 : Boolean(tooltipContent));
 
   const updatePosition = () => {
     const node = anchorRef.current;
@@ -47,6 +52,9 @@ export const Tooltip = ({ label, side = "bottom", children }: TooltipProps) => {
   const transform = useMemo(() => (side === "right" ? "translateY(-50%)" : "translateX(-50%)"), [side]);
 
   const show = () => {
+    if (!hasTooltipContent) {
+      return;
+    }
     updatePosition();
     setVisible(true);
   };
@@ -59,14 +67,18 @@ export const Tooltip = ({ label, side = "bottom", children }: TooltipProps) => {
       {visible
         ? createPortal(
             <span
-              className="pointer-events-none fixed z-[120] whitespace-nowrap rounded-md border border-white/14 bg-black/88 px-2 py-1 text-xs text-paw-text-secondary shadow-lg shadow-black/45 backdrop-blur-md"
+              className={clsx(
+                "popup-tooltip pointer-events-none fixed z-[120] px-2 py-1 text-xs",
+                typeof tooltipContent === "string" ? "whitespace-nowrap" : "whitespace-normal",
+                popupClassName,
+              )}
               style={{
                 left: `${position.left}px`,
                 top: `${position.top}px`,
                 transform,
               }}
             >
-              {label}
+              {tooltipContent}
             </span>,
             document.body,
           )

@@ -13,6 +13,8 @@ export interface ScreenShareSource {
   name: string;
   displayId: string;
   kind: "screen" | "window";
+  thumbnailDataUrl: string | null;
+  appIconDataUrl: string | null;
 }
 
 interface UseVoiceRoomResult {
@@ -22,6 +24,7 @@ interface UseVoiceRoomResult {
   remoteStreams: Record<string, MediaStream>;
   remoteScreenStreams: Record<string, MediaStream>;
   localScreenStream: MediaStream | null;
+  screenShareFps: number | null;
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
@@ -34,7 +37,7 @@ interface UseVoiceRoomResult {
   leave: () => Promise<void>;
   toggleMuted: () => void;
   toggleDeafened: () => void;
-  toggleScreenShare: () => Promise<boolean>;
+  toggleScreenShare: (preferredSourceId?: string) => Promise<boolean>;
   setVolume: (value: number) => void;
   setInputDevice: (deviceId: string) => Promise<boolean>;
   refreshScreenSources: () => Promise<ScreenShareSource[]>;
@@ -79,6 +82,8 @@ const ICE_SERVERS = buildIceServers();
 const DEFAULT_INPUT_DEVICE_ID = "__system_default__";
 const DEFAULT_SCREEN_SOURCE_ID = "__auto__";
 const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
+const SCREEN_SHARE_TARGET_FPS = 60;
+const SCREEN_SHARE_MIN_FPS = 30;
 const DEFAULT_JOIN_SOUND_PATH = "sounds/voice-join.wav";
 const DEFAULT_LEAVE_SOUND_PATH = "sounds/voice-leave.wav";
 const PRESENCE_SOUND_VOLUME_RAW = Number(import.meta.env.VITE_VOICE_PRESENCE_SOUND_VOLUME);
@@ -138,6 +143,54 @@ const voiceWarn = (message: string, payload?: unknown): void => {
   console.warn(`[voice] ${message} ${stringifyVoicePayload(payload)}`);
 };
 
+const optimizeScreenTrackForStreaming = async (track: MediaStreamTrack): Promise<void> => {
+  if (track.kind !== "video") {
+    return;
+  }
+
+  track.contentHint = "motion";
+  if (typeof track.applyConstraints !== "function") {
+    return;
+  }
+
+  try {
+    await track.applyConstraints({
+      frameRate: {
+        min: SCREEN_SHARE_MIN_FPS,
+        ideal: SCREEN_SHARE_TARGET_FPS,
+        max: SCREEN_SHARE_TARGET_FPS,
+      },
+    });
+  } catch {
+    try {
+      await track.applyConstraints({
+        frameRate: {
+          ideal: SCREEN_SHARE_TARGET_FPS,
+          max: SCREEN_SHARE_TARGET_FPS,
+        },
+      });
+    } catch {
+      // Keep default browser-selected FPS if constraints are not supported.
+    }
+  }
+};
+
+const optimizeScreenVideoSender = async (sender: RTCRtpSender): Promise<void> => {
+  try {
+    const parameters = sender.getParameters();
+    const nextEncodings = parameters.encodings && parameters.encodings.length > 0 ? [...parameters.encodings] : [{}];
+    nextEncodings[0] = {
+      ...nextEncodings[0],
+      maxFramerate: SCREEN_SHARE_TARGET_FPS,
+      scaleResolutionDownBy: 1,
+    };
+    parameters.encodings = nextEncodings;
+    await sender.setParameters(parameters);
+  } catch {
+    // Not all WebRTC stacks support encoding tuning.
+  }
+};
+
 interface ScreenShareSenders {
   video?: RTCRtpSender;
   audio?: RTCRtpSender;
@@ -157,6 +210,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const [remoteScreenStreams, setRemoteScreenStreams] = useState<Record<string, MediaStream>>({});
   const [localAudioStream, setLocalAudioStream] = useState<MediaStream | null>(null);
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
+  const [screenShareFps, setScreenShareFps] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
   const [deafened, setDeafened] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
@@ -176,6 +230,8 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const disconnectTimersRef = useRef<Map<string, number>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
+  const screenShareStatsRef = useRef<Map<string, { timestamp: number; frames: number }>>(new Map());
+  const screenShareStatsTimerRef = useRef<number | null>(null);
   const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
   const lastRejoinSocketRef = useRef<WebSocket | null>(null);
@@ -485,6 +541,8 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           name: source.name,
           displayId: source.displayId,
           kind: source.kind,
+          thumbnailDataUrl: source.thumbnailDataUrl,
+          appIconDataUrl: source.appIconDataUrl,
         }));
 
       setScreenSources(normalized);
@@ -732,7 +790,18 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     (remoteUserId: string, channelId: string, serverId: string | null): RTCPeerConnection => {
       const existing = peersRef.current.get(remoteUserId);
       if (existing) {
-        return existing;
+        const existingState = existing.connectionState;
+        const existingSignalingState = existing.signalingState;
+        if (
+          existingState === "failed" ||
+          existingState === "disconnected" ||
+          existingState === "closed" ||
+          existingSignalingState === "closed"
+        ) {
+          closePeer(remoteUserId);
+        } else {
+          return existing;
+        }
       }
 
       voiceLog("creating peer", {
@@ -750,6 +819,15 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           peer.addTrack(track, localStream);
         }
       }
+
+      // Keep a dedicated recv-only video transceiver so that on rejoin we can
+      // immediately receive an already-running remote screen share in answer.
+      try {
+        peer.addTransceiver("video", { direction: "recvonly" });
+      } catch {
+        // Some environments can reject explicit transceivers; ignore.
+      }
+
       const screenTrack = localScreenTrackRef.current;
       const screenAudioTrack = localScreenAudioTrackRef.current;
       const screenStream = localScreenStreamRef.current;
@@ -757,6 +835,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         const senders: ScreenShareSenders = {};
         try {
           senders.video = peer.addTrack(screenTrack, screenStream);
+          if (senders.video) {
+            void optimizeScreenVideoSender(senders.video);
+          }
         } catch (error) {
           voiceWarn("failed to attach screen video track to peer", {
             remoteUserId,
@@ -1052,7 +1133,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
   }, [connectedChannelId, deafened, muted, sendGatewayEvent]);
 
-  const toggleScreenShare = useCallback(async (): Promise<boolean> => {
+  const toggleScreenShare = useCallback(async (preferredSourceId?: string): Promise<boolean> => {
     if (!connectedChannelIdRef.current) {
       return false;
     }
@@ -1067,20 +1148,38 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     const availableSources = await refreshScreenSources();
-    const preferredSourceId =
-      selectedScreenSourceId !== DEFAULT_SCREEN_SOURCE_ID && availableSources.some((source) => source.id === selectedScreenSourceId)
-        ? selectedScreenSourceId
+    const normalizedPreferredSourceId =
+      typeof preferredSourceId === "string" && preferredSourceId.trim().length > 0
+        ? preferredSourceId.trim()
+        : selectedScreenSourceId;
+    const resolvedPreferredSourceId =
+      normalizedPreferredSourceId !== DEFAULT_SCREEN_SOURCE_ID && availableSources.some((source) => source.id === normalizedPreferredSourceId)
+        ? normalizedPreferredSourceId
         : DEFAULT_SCREEN_SOURCE_ID;
-    const selected = await setScreenSource(preferredSourceId);
+
+    const selected = await setScreenSource(resolvedPreferredSourceId);
     if (!selected) {
-      voiceWarn("screen share source selection failed", { sourceId: preferredSourceId });
+      voiceWarn("screen share source selection failed", { sourceId: resolvedPreferredSourceId });
       return false;
     }
 
     const captureAttempts: DisplayMediaStreamOptions[] = [
       {
         video: {
-          frameRate: { ideal: 30, max: 60 },
+          frameRate: {
+            min: SCREEN_SHARE_MIN_FPS,
+            ideal: SCREEN_SHARE_TARGET_FPS,
+            max: SCREEN_SHARE_TARGET_FPS,
+          },
+        },
+        audio: true,
+      },
+      {
+        video: {
+          frameRate: {
+            ideal: SCREEN_SHARE_TARGET_FPS,
+            max: SCREEN_SHARE_TARGET_FPS,
+          },
         },
         audio: true,
       },
@@ -1105,12 +1204,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         voiceWarn("screen share start attempt failed", {
           error: error instanceof Error ? error.message : String(error),
           constraints,
-          sourceId: preferredSourceId,
+          sourceId: resolvedPreferredSourceId,
         });
       }
     }
 
-    if (!screenStream && preferredSourceId !== DEFAULT_SCREEN_SOURCE_ID) {
+    if (!screenStream && resolvedPreferredSourceId !== DEFAULT_SCREEN_SOURCE_ID) {
       const fallbackSelected = await setScreenSource(DEFAULT_SCREEN_SOURCE_ID);
       if (fallbackSelected) {
         for (const constraints of captureAttempts) {
@@ -1142,14 +1241,15 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       voiceWarn("screen share start failed: no video track");
       return false;
     }
+    await optimizeScreenTrackForStreaming(screenTrack);
     const screenAudioTrack = screenStream.getAudioTracks()[0] ?? null;
     if (screenAudioTrack) {
       voiceLog("screen share captured system audio track", {
         trackId: screenAudioTrack.id,
-        sourceId: preferredSourceId,
+        sourceId: resolvedPreferredSourceId,
       });
     } else {
-      voiceWarn("screen share started without system audio track", { sourceId: preferredSourceId });
+      voiceWarn("screen share started without system audio track", { sourceId: resolvedPreferredSourceId });
     }
 
     localScreenStreamRef.current = screenStream;
@@ -1180,6 +1280,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       let videoSender: RTCRtpSender | undefined;
       try {
         videoSender = peer.addTrack(screenTrack, screenStream);
+        if (videoSender) {
+          await optimizeScreenVideoSender(videoSender);
+        }
       } catch (error) {
         voiceWarn("failed to add screen video track", {
           remoteUserId,
@@ -1205,6 +1308,116 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
     return true;
   }, [refreshScreenSources, renegotiatePeer, selectedScreenSourceId, setScreenSource, stopScreenShare]);
+
+  useEffect(() => {
+    if (!screenSharing || !localScreenTrackRef.current) {
+      if (screenShareStatsTimerRef.current !== null) {
+        window.clearInterval(screenShareStatsTimerRef.current);
+        screenShareStatsTimerRef.current = null;
+      }
+      screenShareStatsRef.current.clear();
+      setScreenShareFps(null);
+      return;
+    }
+
+    let disposed = false;
+
+    const collectScreenShareFps = async () => {
+      const senderEntries = Array.from(screenSendersRef.current.entries())
+        .map(([remoteUserId, senders]) => ({ remoteUserId, sender: senders.video }))
+        .filter((entry): entry is { remoteUserId: string; sender: RTCRtpSender } => Boolean(entry.sender));
+
+      if (senderEntries.length === 0) {
+        if (!disposed) {
+          setScreenShareFps(null);
+        }
+        return;
+      }
+
+      const fpsValues: number[] = [];
+
+      for (const { remoteUserId, sender } of senderEntries) {
+        try {
+          const stats = await sender.getStats();
+          let bestSenderFps = 0;
+
+          for (const report of stats.values()) {
+            if (report.type !== "outbound-rtp") {
+              continue;
+            }
+            const mediaKind = (report as RTCOutboundRtpStreamStats & { mediaType?: string }).kind ?? (report as { mediaType?: string }).mediaType;
+            if (mediaKind !== "video") {
+              continue;
+            }
+
+            const fpsFromReport = (report as RTCOutboundRtpStreamStats & { framesPerSecond?: number }).framesPerSecond;
+            if (typeof fpsFromReport === "number" && Number.isFinite(fpsFromReport) && fpsFromReport > 0) {
+              bestSenderFps = Math.max(bestSenderFps, fpsFromReport);
+            }
+
+            const framesNowRaw =
+              (report as RTCOutboundRtpStreamStats & { framesEncoded?: number }).framesEncoded ??
+              (report as RTCOutboundRtpStreamStats & { framesSent?: number }).framesSent;
+            if (typeof framesNowRaw !== "number" || !Number.isFinite(framesNowRaw)) {
+              continue;
+            }
+
+            const sampleKey = `${remoteUserId}:${report.id}`;
+            const previous = screenShareStatsRef.current.get(sampleKey);
+            if (previous) {
+              const deltaMs = report.timestamp - previous.timestamp;
+              const deltaFrames = framesNowRaw - previous.frames;
+              if (deltaMs > 0 && deltaFrames >= 0) {
+                const fpsFromDelta = (deltaFrames * 1000) / deltaMs;
+                if (Number.isFinite(fpsFromDelta) && fpsFromDelta > 0) {
+                  bestSenderFps = Math.max(bestSenderFps, fpsFromDelta);
+                }
+              }
+            }
+
+            screenShareStatsRef.current.set(sampleKey, {
+              timestamp: report.timestamp,
+              frames: framesNowRaw,
+            });
+          }
+
+          if (bestSenderFps > 0) {
+            fpsValues.push(bestSenderFps);
+          }
+        } catch {
+          // Ignore per-peer stats failure.
+        }
+      }
+
+      if (disposed) {
+        return;
+      }
+
+      if (fpsValues.length === 0) {
+        setScreenShareFps(null);
+        return;
+      }
+
+      const average = fpsValues.reduce((sum, fps) => sum + fps, 0) / fpsValues.length;
+      const normalized = Math.max(0, Math.min(SCREEN_SHARE_TARGET_FPS, Math.round(average)));
+      setScreenShareFps(normalized);
+    };
+
+    void collectScreenShareFps();
+    screenShareStatsTimerRef.current = window.setInterval(() => {
+      void collectScreenShareFps();
+    }, 1000) as unknown as number;
+
+    return () => {
+      disposed = true;
+      if (screenShareStatsTimerRef.current !== null) {
+        window.clearInterval(screenShareStatsTimerRef.current);
+        screenShareStatsTimerRef.current = null;
+      }
+      screenShareStatsRef.current.clear();
+      setScreenShareFps(null);
+    };
+  }, [screenSharing]);
 
   const setVolume = useCallback((value: number) => {
     const next = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
@@ -1321,9 +1534,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       return;
     }
 
-    const sharingRemoteUsers = new Set(
+    const aliveRemoteUsers = new Set(
       participants
-        .filter((participant) => participant.user_id !== currentUserId && Boolean(participant.screen_sharing))
+        .filter((participant) => participant.user_id !== currentUserId)
         .map((participant) => participant.user_id),
     );
 
@@ -1333,7 +1546,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       for (const [userId, stream] of Object.entries(current)) {
         const hasLiveVideoTrack = stream.getVideoTracks().some((track) => track.readyState === "live");
-        if (sharingRemoteUsers.has(userId) && hasLiveVideoTrack) {
+        if (aliveRemoteUsers.has(userId) && hasLiveVideoTrack) {
           next[userId] = stream;
         } else {
           changed = true;
@@ -1498,6 +1711,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       stopLocalStream();
       clearLocalScreenState(true);
       screenSendersRef.current.clear();
+      if (screenShareStatsTimerRef.current !== null) {
+        window.clearInterval(screenShareStatsTimerRef.current);
+        screenShareStatsTimerRef.current = null;
+      }
+      screenShareStatsRef.current.clear();
+      setScreenShareFps(null);
       closeAllPeers();
       setRemoteStreams({});
       setRemoteScreenStreams({});
@@ -1530,6 +1749,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     remoteStreams,
     remoteScreenStreams,
     localScreenStream,
+    screenShareFps,
     muted,
     deafened,
     screenSharing,

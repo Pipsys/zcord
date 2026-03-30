@@ -52,6 +52,8 @@ interface ScreenShareSourcePayload {
   name: string;
   displayId: string;
   kind: "screen" | "window";
+  thumbnailDataUrl: string | null;
+  appIconDataUrl: string | null;
 }
 
 const pawcordApi = {

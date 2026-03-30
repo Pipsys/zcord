@@ -167,7 +167,7 @@ const App = () => {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 6, scale: 0.98 }}
               transition={{ duration: 0.15, ease: "easeOut" }}
-              className="pointer-events-auto rounded-lg border border-white/10 bg-black/22 px-3 py-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.28)] backdrop-blur-sm"
+              className="popup-toast pointer-events-auto px-3 py-2.5"
             >
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -179,7 +179,9 @@ const App = () => {
                   aria-label="Close toast"
                   onClick={() => removeToast(toast.id)}
                   className="grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition-colors hover:bg-white/10 hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
-                >x</button>
+                >
+                  ×
+                </button>
               </div>
             </motion.div>
           ))}

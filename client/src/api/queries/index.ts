@@ -99,6 +99,32 @@ export const useCreateChannelMutation = () => {
   });
 };
 
+export const useUpdateChannelMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      channelId: string;
+      serverId: string | null;
+      name?: string;
+      topic?: string | null;
+      position?: number;
+      is_nsfw?: boolean;
+      slowmode_delay?: number;
+      parent_id?: string | null;
+    }) => {
+      const { channelId, serverId: _serverId, ...body } = payload;
+      return patch<Channel>(`/channels/${channelId}`, body);
+    },
+    onSuccess: (channel, payload) => {
+      const targetServerId = channel.server_id ?? payload.serverId;
+      void queryClient.invalidateQueries({ queryKey: ["channels", targetServerId] });
+      if (targetServerId === null) {
+        void queryClient.invalidateQueries({ queryKey: ["channels", "dm"] });
+      }
+    },
+  });
+};
+
 export const useJoinServerMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({

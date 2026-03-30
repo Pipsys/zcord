@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
 
 import { Avatar } from "@/components/ui/Avatar";
+import { Modal } from "@/components/ui/Modal";
 import { VoiceControls } from "@/components/voice/VoiceControls";
 import { VoiceAvatarStateBadge, VoiceStateIndicators } from "@/components/voice/VoiceStateIndicators";
 import type { ScreenShareSource, VoiceInputDevice } from "@/hooks/useVoiceRoom";
@@ -19,6 +20,7 @@ interface VoiceChannelProps {
   remoteScreenStreams: Record<string, MediaStream>;
   localAudioStream: MediaStream | null;
   localScreenStream: MediaStream | null;
+  screenShareFps: number | null;
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
@@ -31,11 +33,11 @@ interface VoiceChannelProps {
   onLeave: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
-  onToggleScreenShare: () => void;
+  onToggleScreenShare: (preferredSourceId?: string) => Promise<boolean>;
   onVolumeChange: (value: number) => void;
-  onInputDeviceChange: (deviceId: string) => void;
-  onRefreshScreenSources: () => void;
-  onScreenSourceChange: (sourceId: string) => void;
+  onInputDeviceChange: (deviceId: string) => Promise<boolean>;
+  onRefreshScreenSources: () => Promise<ScreenShareSource[]>;
+  onScreenSourceChange: (sourceId: string) => Promise<boolean>;
 }
 
 const toParticipantName = (participant: VoiceParticipant, currentUserId: string | null, currentUsername: string | null): string => {
@@ -58,6 +60,7 @@ export const VoiceChannel = ({
   remoteScreenStreams,
   localAudioStream,
   localScreenStream,
+  screenShareFps,
   muted,
   deafened,
   screenSharing,
@@ -84,6 +87,16 @@ export const VoiceChannel = ({
 
   const [speakingUserIds, setSpeakingUserIds] = useState<string[]>([]);
   const [fullscreenUserId, setFullscreenUserId] = useState<string | null>(null);
+  const [screenPickerOpen, setScreenPickerOpen] = useState(false);
+  const [screenPickerLoading, setScreenPickerLoading] = useState(false);
+  const [screenPickerStarting, setScreenPickerStarting] = useState(false);
+  const [screenPickerTab, setScreenPickerTab] = useState<"all" | "screen" | "window">("all");
+  const [screenPickerSourceId, setScreenPickerSourceId] = useState<string>("__auto__");
+  const [screenPickerPreviewStream, setScreenPickerPreviewStream] = useState<MediaStream | null>(null);
+  const [screenPickerPreviewLoading, setScreenPickerPreviewLoading] = useState(false);
+  const [screenPickerPreviewFailed, setScreenPickerPreviewFailed] = useState(false);
+  const screenPickerPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenPickerPreviewRequestIdRef = useRef(0);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const speakingTimerRef = useRef<number | null>(null);
@@ -190,6 +203,16 @@ export const VoiceChannel = ({
   const screenShareTiles = useMemo(() => participantTiles.filter((tile) => Boolean(tile.screenStream)), [participantTiles]);
   const regularVoiceTiles = useMemo(() => participantTiles.filter((tile) => !tile.screenStream), [participantTiles]);
   const regularGridClass = useMemo(() => resolveGridClass(regularVoiceTiles.length), [regularVoiceTiles.length]);
+  const visibleScreenSources = useMemo(() => {
+    if (screenPickerTab === "all") {
+      return screenSources;
+    }
+    return screenSources.filter((source) => source.kind === screenPickerTab);
+  }, [screenPickerTab, screenSources]);
+  const selectedScreenSource = useMemo(
+    () => screenSources.find((source) => source.id === screenPickerSourceId) ?? null,
+    [screenPickerSourceId, screenSources],
+  );
 
   useEffect(() => {
     for (const participant of screenParticipants) {
@@ -392,8 +415,193 @@ export const VoiceChannel = ({
         const media = fullscreenVideoRef.current as HTMLVideoElement & { srcObject: MediaStream | null };
         media.srcObject = null;
       }
+
+      if (screenPickerPreviewVideoRef.current) {
+        const media = screenPickerPreviewVideoRef.current as HTMLVideoElement & { srcObject: MediaStream | null };
+        media.srcObject = null;
+      }
+      if (screenPickerPreviewStream) {
+        screenPickerPreviewStream.getTracks().forEach((track) => track.stop());
+      }
     };
+  }, [screenPickerPreviewStream]);
+
+  const refreshScreenSourcesForPicker = useCallback(
+    async (options?: { preserveSelection?: boolean }): Promise<ScreenShareSource[]> => {
+      setScreenPickerLoading(true);
+      try {
+        const sources = await onRefreshScreenSources();
+        setScreenPickerSourceId((current) => {
+          if (options?.preserveSelection && current !== "__auto__" && sources.some((source) => source.id === current)) {
+            return current;
+          }
+          if (selectedScreenSourceId !== "__auto__" && sources.some((source) => source.id === selectedScreenSourceId)) {
+            return selectedScreenSourceId;
+          }
+          return sources[0]?.id ?? "__auto__";
+        });
+        return sources;
+      } finally {
+        setScreenPickerLoading(false);
+      }
+    },
+    [onRefreshScreenSources, selectedScreenSourceId],
+  );
+
+  const stopScreenPickerPreview = useCallback(() => {
+    screenPickerPreviewRequestIdRef.current += 1;
+    setScreenPickerPreviewLoading(false);
+    setScreenPickerPreviewFailed(false);
+    setScreenPickerPreviewStream((current) => {
+      if (!current) {
+        return null;
+      }
+      current.getTracks().forEach((track) => track.stop());
+      return null;
+    });
+    if (screenPickerPreviewVideoRef.current) {
+      const media = screenPickerPreviewVideoRef.current as HTMLVideoElement & { srcObject: MediaStream | null };
+      media.srcObject = null;
+    }
   }, []);
+
+  const startScreenPickerPreview = useCallback(
+    async (sourceId: string): Promise<void> => {
+      if (!screenPickerOpen) {
+        return;
+      }
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== "function") {
+        return;
+      }
+
+      const normalizedSourceId = typeof sourceId === "string" && sourceId.trim().length > 0 ? sourceId.trim() : "__auto__";
+      if (normalizedSourceId === "__auto__") {
+        stopScreenPickerPreview();
+        return;
+      }
+
+      const requestId = screenPickerPreviewRequestIdRef.current + 1;
+      screenPickerPreviewRequestIdRef.current = requestId;
+      setScreenPickerPreviewLoading(true);
+      setScreenPickerPreviewFailed(false);
+
+      const selected = await onScreenSourceChange(normalizedSourceId);
+      if (!selected) {
+        if (requestId === screenPickerPreviewRequestIdRef.current) {
+          setScreenPickerPreviewLoading(false);
+          setScreenPickerPreviewFailed(true);
+        }
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            frameRate: { ideal: 12, max: 24 },
+          },
+          audio: false,
+        });
+
+        if (requestId !== screenPickerPreviewRequestIdRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        setScreenPickerPreviewStream((current) => {
+          if (current) {
+            current.getTracks().forEach((track) => track.stop());
+          }
+          return stream;
+        });
+        setScreenPickerPreviewLoading(false);
+        setScreenPickerPreviewFailed(false);
+      } catch {
+        if (requestId === screenPickerPreviewRequestIdRef.current) {
+          setScreenPickerPreviewLoading(false);
+          setScreenPickerPreviewFailed(true);
+        }
+      }
+    },
+    [onScreenSourceChange, screenPickerOpen, stopScreenPickerPreview],
+  );
+
+  const openScreenSharePicker = useCallback(async () => {
+    setScreenPickerTab("all");
+    setScreenPickerOpen(true);
+    await refreshScreenSourcesForPicker();
+  }, [refreshScreenSourcesForPicker]);
+
+  const handleScreenShareButtonClick = useCallback(async () => {
+    if (!connected) {
+      return;
+    }
+
+    if (screenSharing) {
+      await onToggleScreenShare();
+      return;
+    }
+
+    await openScreenSharePicker();
+  }, [connected, openScreenSharePicker, onToggleScreenShare, screenSharing]);
+
+  const startScreenShareFromPicker = useCallback(async () => {
+    if (!connected || screenPickerStarting) {
+      return;
+    }
+    setScreenPickerStarting(true);
+    try {
+      const sourceId = screenPickerSourceId || "__auto__";
+      const selected = await onScreenSourceChange(sourceId);
+      if (!selected) {
+        return;
+      }
+      stopScreenPickerPreview();
+      const started = await onToggleScreenShare(sourceId);
+      if (started) {
+        setScreenPickerOpen(false);
+      }
+    } finally {
+      setScreenPickerStarting(false);
+    }
+  }, [connected, onScreenSourceChange, onToggleScreenShare, screenPickerSourceId, screenPickerStarting, stopScreenPickerPreview]);
+
+  useEffect(() => {
+    if (!screenSharing) {
+      return;
+    }
+    setScreenPickerOpen(false);
+    setScreenPickerStarting(false);
+    stopScreenPickerPreview();
+  }, [screenSharing, stopScreenPickerPreview]);
+
+  useEffect(() => {
+    if (!screenPickerOpen) {
+      stopScreenPickerPreview();
+      return;
+    }
+    void startScreenPickerPreview(screenPickerSourceId);
+  }, [screenPickerOpen, screenPickerSourceId, startScreenPickerPreview, stopScreenPickerPreview]);
+
+  useEffect(() => {
+    const video = screenPickerPreviewVideoRef.current;
+    if (!video) {
+      return;
+    }
+    const media = video as HTMLVideoElement & { srcObject: MediaStream | null };
+    if (media.srcObject !== screenPickerPreviewStream) {
+      media.srcObject = screenPickerPreviewStream;
+    }
+    if (screenPickerPreviewStream) {
+      video.muted = true;
+      void video.play().catch(() => undefined);
+    }
+  }, [screenPickerPreviewStream]);
+
+  useEffect(() => {
+    return () => {
+      stopScreenPickerPreview();
+    };
+  }, [stopScreenPickerPreview]);
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-paw-bg-primary">
@@ -450,7 +658,7 @@ export const VoiceChannel = ({
 
                   {isSharingScreen ? (
                     <div className="absolute right-2 top-2 rounded-full border border-red-400/40 bg-red-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                      {t("voice.live_badge")}
+                      {isCurrentUser && typeof screenShareFps === "number" ? `${t("voice.live_badge")} ${screenShareFps} FPS` : t("voice.live_badge")}
                     </div>
                   ) : null}
 
@@ -545,7 +753,7 @@ export const VoiceChannel = ({
 
                 {isSharingScreen ? (
                   <div className="absolute right-2 top-2 rounded-full border border-red-400/40 bg-red-500/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                    {t("voice.live_badge")}
+                    {isCurrentUser && typeof screenShareFps === "number" ? `${t("voice.live_badge")} ${screenShareFps} FPS` : t("voice.live_badge")}
                   </div>
                 ) : null}
 
@@ -575,7 +783,7 @@ export const VoiceChannel = ({
           selectedScreenSourceId={selectedScreenSourceId}
           onToggleMute={onToggleMute}
           onToggleDeafen={onToggleDeafen}
-          onToggleScreenShare={onToggleScreenShare}
+          onToggleScreenShare={handleScreenShareButtonClick}
           onLeave={onLeave}
           onVolumeChange={onVolumeChange}
           onInputDeviceChange={onInputDeviceChange}
@@ -583,6 +791,148 @@ export const VoiceChannel = ({
           onScreenSourceChange={onScreenSourceChange}
         />
       </div>
+
+      <Modal
+        open={screenPickerOpen}
+        title={t("voice.screen_picker_title")}
+        onClose={() => setScreenPickerOpen(false)}
+        className="max-w-6xl p-4 sm:p-5"
+      >
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 p-2">
+            <div className="inline-flex rounded-lg border border-white/10 bg-black/30 p-0.5">
+              {(["all", "screen", "window"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setScreenPickerTab(tab)}
+                  className={clsx(
+                    "rounded px-2.5 py-1 text-xs font-semibold transition-colors",
+                    screenPickerTab === tab ? "bg-[#5865f2] text-white" : "text-paw-text-muted hover:bg-white/10 hover:text-paw-text-secondary",
+                  )}
+                >
+                  {tab === "all"
+                    ? t("voice.screen_picker_tab_all")
+                    : tab === "screen"
+                      ? t("voice.screen_picker_tab_screen")
+                      : t("voice.screen_picker_tab_window")}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void refreshScreenSourcesForPicker({ preserveSelection: true });
+              }}
+              className="popup-btn-secondary px-2.5 py-1 text-xs font-semibold"
+              disabled={screenPickerLoading}
+            >
+              {t("voice.refresh_sources")}
+            </button>
+          </div>
+
+          <div className="max-h-[42vh] overflow-y-auto rounded-xl border border-white/10 bg-black/15 p-2">
+            {screenPickerLoading ? (
+              <p className="px-2 py-4 text-center text-sm text-paw-text-muted">{t("voice.screen_picker_loading")}</p>
+            ) : visibleScreenSources.length === 0 ? (
+              <p className="px-2 py-4 text-center text-sm text-paw-text-muted">{t("voice.screen_picker_empty")}</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {visibleScreenSources.map((source) => (
+                  <button
+                    key={source.id}
+                    type="button"
+                    onClick={() => setScreenPickerSourceId(source.id)}
+                    className={clsx(
+                      "group overflow-hidden rounded-lg border text-left transition-colors",
+                      screenPickerSourceId === source.id
+                        ? "border-[#6f7cff] bg-[#303645]"
+                        : "border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/5",
+                    )}
+                  >
+                    <div className="aspect-video w-full overflow-hidden bg-black/35">
+                      {source.thumbnailDataUrl ? (
+                        <img src={source.thumbnailDataUrl} alt={source.name} className="h-full w-full object-cover" loading="lazy" />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center text-xs text-paw-text-muted">{t("voice.screen_picker_no_preview")}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 px-2.5 py-2">
+                      {source.appIconDataUrl ? <img src={source.appIconDataUrl} alt="" className="h-4 w-4 rounded-sm" /> : null}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-paw-text-secondary">{source.name}</p>
+                        <p className="text-[11px] text-paw-text-muted">
+                          {source.kind === "screen" ? t("voice.screen_source_display") : t("voice.screen_source_window")}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2.5">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-sm font-semibold text-paw-text-secondary">
+                {selectedScreenSource ? selectedScreenSource.name : t("voice.screen_source_auto")}
+              </p>
+              {selectedScreenSource ? (
+                <span className="rounded-md border border-white/12 bg-black/30 px-2 py-0.5 text-[11px] font-semibold text-paw-text-muted">
+                  {selectedScreenSource.kind === "screen" ? t("voice.screen_source_display") : t("voice.screen_source_window")}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="overflow-hidden rounded-lg border border-white/10 bg-black/35">
+              <div className="aspect-video w-full">
+                {screenPickerPreviewLoading ? (
+                  <div className="grid h-full w-full place-items-center text-sm text-paw-text-muted">{t("voice.screen_picker_preview_loading")}</div>
+                ) : screenPickerPreviewStream ? (
+                  <video ref={screenPickerPreviewVideoRef} autoPlay muted playsInline className="h-full w-full bg-black object-contain" />
+                ) : selectedScreenSource?.thumbnailDataUrl ? (
+                  <img
+                    src={selectedScreenSource.thumbnailDataUrl}
+                    alt={selectedScreenSource.name}
+                    className="h-full w-full object-contain"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-sm text-paw-text-muted">
+                    {screenPickerPreviewFailed ? t("voice.screen_picker_preview_failed") : t("voice.screen_picker_no_preview")}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-xs text-paw-text-muted">
+              {selectedScreenSource ? selectedScreenSource.name : t("voice.screen_source_auto")}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setScreenPickerOpen(false)}
+                className="popup-btn-secondary px-3 py-1.5 text-xs font-medium"
+                disabled={screenPickerStarting}
+              >
+                {t("message.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void startScreenShareFromPicker();
+                }}
+                className="popup-btn-primary px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={screenPickerLoading || screenPickerStarting || visibleScreenSources.length === 0}
+              >
+                {screenPickerStarting ? t("voice.screen_picker_starting") : t("voice.screen_picker_start")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       {fullscreenUserId && fullscreenStream ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/95 p-3" onClick={() => setFullscreenUserId(null)}>

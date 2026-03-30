@@ -19,6 +19,7 @@ interface ChannelListProps {
   connectedVoiceChannelId: string | null;
   onJoinVoice: (channelId: string) => void;
   onLeaveVoice: () => void;
+  onRenameChannel: (channelId: string) => void;
   onCreateTextChannel: () => void;
   onCreateVoiceChannel: () => void;
   onInvite: () => void;
@@ -54,11 +55,20 @@ const VoiceIcon = () => (
   </svg>
 );
 
+const GearIcon = () => (
+  <svg className="h-[15px] w-[15px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <path
+      d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.06-.94l1.69-1.32a.5.5 0 0 0 .12-.64l-1.6-2.77a.5.5 0 0 0-.6-.22l-1.99.8a7.23 7.23 0 0 0-1.63-.94l-.3-2.12A.5.5 0 0 0 14.34 3h-3.2a.5.5 0 0 0-.49.42l-.3 2.12c-.58.23-1.12.54-1.63.94l-1.99-.8a.5.5 0 0 0-.6.22L4.53 8.67a.5.5 0 0 0 .12.64l1.69 1.32c-.04.31-.06.62-.06.94s.02.63.06.94l-1.69 1.32a.5.5 0 0 0-.12.64l1.6 2.77c.14.24.42.34.68.24l1.99-.8c.51.4 1.05.72 1.63.94l.3 2.12c.04.24.25.42.49.42h3.2c.24 0 .45-.18.49-.42l.3-2.12c.58-.23 1.12-.54 1.63-.94l1.99.8c.26.1.54 0 .68-.24l1.6-2.77a.5.5 0 0 0-.12-.64l-1.69-1.32ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
 const sectionHeadingClass = "px-2 text-[11px] font-semibold uppercase tracking-[0.04em] leading-4 text-paw-text-muted";
 const channelRowBaseClass =
   "group flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[15px] leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
 const iconActionButtonClass =
-  "grid h-5 w-5 place-items-center rounded text-sm leading-none text-paw-text-muted transition-colors hover:bg-white/10 hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-50";
+  "grid h-6 w-6 place-items-center rounded-md border border-white/12 bg-black/25 text-paw-text-muted transition-colors hover:bg-white/10 hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-45";
 const CHANNEL_LIST_MIN_WIDTH = 220;
 const CHANNEL_LIST_MAX_WIDTH = 360;
 const CHANNEL_LIST_DEFAULT_WIDTH = 240;
@@ -83,6 +93,7 @@ export const ChannelList = ({
   connectedVoiceChannelId,
   onJoinVoice,
   onLeaveVoice,
+  onRenameChannel,
   onCreateTextChannel,
   onCreateVoiceChannel,
   onInvite,
@@ -163,6 +174,20 @@ export const ChannelList = ({
     }
     return channels.find((item) => item.id === connectedVoiceChannelId) ?? null;
   }, [channels, connectedVoiceChannelId]);
+  const selectedTextChannelForSettings = useMemo(() => {
+    const activeTextChannel = channels.find((item) => item.id === activeChannelId && item.type !== "voice");
+    if (activeTextChannel) {
+      return activeTextChannel;
+    }
+    return textChannels[0] ?? null;
+  }, [activeChannelId, channels, textChannels]);
+  const selectedVoiceChannelForSettings = useMemo(() => {
+    const activeVoiceChannel = channels.find((item) => item.id === activeChannelId && item.type === "voice");
+    if (activeVoiceChannel) {
+      return activeVoiceChannel;
+    }
+    return voiceChannels[0] ?? null;
+  }, [activeChannelId, channels, voiceChannels]);
 
   const handleResizeMove = useCallback((event: PointerEvent) => {
     const state = resizeStateRef.current;
@@ -242,7 +267,12 @@ export const ChannelList = ({
       {
         id: "rename",
         label: t("channels.action_rename"),
-        onClick: () => setContext((value) => ({ ...value, visible: false })),
+        onClick: () => {
+          if (context.channelId) {
+            onRenameChannel(context.channelId);
+          }
+          setContext((value) => ({ ...value, visible: false }));
+        },
       },
       {
         id: "mute",
@@ -250,7 +280,7 @@ export const ChannelList = ({
         onClick: () => setContext((value) => ({ ...value, visible: false })),
       },
     ],
-    [t],
+    [context.channelId, onRenameChannel, t],
   );
 
   const renderVoiceChannel = (channel: Channel) => {
@@ -260,7 +290,14 @@ export const ChannelList = ({
     const channelParticipants = voiceParticipantsByChannel[channel.id] ?? [];
 
     return (
-      <div key={channel.id} className={`rounded-md ${justConnected ? "voice-channel-join-animate" : ""}`}>
+      <div
+        key={channel.id}
+        className={`rounded-md ${justConnected ? "voice-channel-join-animate" : ""}`}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setContext({ visible: true, x: event.clientX, y: event.clientY, channelId: channel.id });
+        }}
+      >
         <div
           className={`group flex h-9 items-center gap-2 rounded-md px-2.5 text-[15px] leading-5 transition-colors duration-150 ${
             active
@@ -385,16 +422,32 @@ export const ChannelList = ({
         <div>
           <div className="flex items-center justify-between px-2">
             <p className={sectionHeadingClass}>{t("channels.text_channels")}</p>
-            <button
-              type="button"
-              title={t("channels.create_text_channel")}
-              aria-label={t("channels.create_text_channel")}
-              disabled={isCreatingChannel}
-              onClick={onCreateTextChannel}
-              className={iconActionButtonClass}
-            >
-              +
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title={t("channels.channel_settings")}
+                aria-label={t("channels.channel_settings")}
+                disabled={!canManageServer || !selectedTextChannelForSettings}
+                onClick={() => {
+                  if (selectedTextChannelForSettings) {
+                    onRenameChannel(selectedTextChannelForSettings.id);
+                  }
+                }}
+                className={iconActionButtonClass}
+              >
+                <GearIcon />
+              </button>
+              <button
+                type="button"
+                title={t("channels.create_text_channel")}
+                aria-label={t("channels.create_text_channel")}
+                disabled={isCreatingChannel}
+                onClick={onCreateTextChannel}
+                className={iconActionButtonClass}
+              >
+                <span className="text-[16px] font-semibold leading-none">+</span>
+              </button>
+            </div>
           </div>
           <div className="mt-1 space-y-0.5">
             {textChannels.length === 0 ? <p className="px-2 py-1 text-xs text-paw-text-muted">{t("channels.empty")}</p> : null}
@@ -427,16 +480,32 @@ export const ChannelList = ({
         <div>
           <div className="flex items-center justify-between px-2">
             <p className={sectionHeadingClass}>{t("channels.voice_channels")}</p>
-            <button
-              type="button"
-              title={t("channels.create_voice_channel")}
-              aria-label={t("channels.create_voice_channel")}
-              disabled={isCreatingChannel}
-              onClick={onCreateVoiceChannel}
-              className={iconActionButtonClass}
-            >
-              +
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title={t("channels.channel_settings")}
+                aria-label={t("channels.channel_settings")}
+                disabled={!canManageServer || !selectedVoiceChannelForSettings}
+                onClick={() => {
+                  if (selectedVoiceChannelForSettings) {
+                    onRenameChannel(selectedVoiceChannelForSettings.id);
+                  }
+                }}
+                className={iconActionButtonClass}
+              >
+                <GearIcon />
+              </button>
+              <button
+                type="button"
+                title={t("channels.create_voice_channel")}
+                aria-label={t("channels.create_voice_channel")}
+                disabled={isCreatingChannel}
+                onClick={onCreateVoiceChannel}
+                className={iconActionButtonClass}
+              >
+                <span className="text-[16px] font-semibold leading-none">+</span>
+              </button>
+            </div>
           </div>
           <div className="mt-1 space-y-0.5">
             {voiceChannels.length === 0 ? <p className="px-2 py-1 text-xs text-paw-text-muted">{t("channels.empty")}</p> : null}

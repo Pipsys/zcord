@@ -14,12 +14,12 @@ interface VoiceControlsProps {
   selectedScreenSourceId: string;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
-  onToggleScreenShare: () => void;
+  onToggleScreenShare: (preferredSourceId?: string) => Promise<boolean>;
   onLeave: () => void;
   onVolumeChange: (value: number) => void;
-  onInputDeviceChange: (deviceId: string) => void;
-  onRefreshScreenSources: () => void;
-  onScreenSourceChange: (sourceId: string) => void;
+  onInputDeviceChange: (deviceId: string) => Promise<boolean>;
+  onRefreshScreenSources: () => Promise<ScreenShareSource[]>;
+  onScreenSourceChange: (sourceId: string) => Promise<boolean>;
 }
 
 export const VoiceControls = ({
@@ -80,7 +80,9 @@ export const VoiceControls = ({
         </button>
 
         <button
-          onClick={onToggleScreenShare}
+          onClick={() => {
+            void onToggleScreenShare();
+          }}
           disabled={!connected}
           title={screenSharing ? t("voice.stop_screen_share") : t("voice.screen_share")}
           className={`${buttonBaseClass} ${
@@ -135,7 +137,9 @@ export const VoiceControls = ({
             {t("voice.input_device")}
             <select
               value={selectedInputDeviceId}
-              onChange={(event) => onInputDeviceChange(event.target.value)}
+              onChange={(event) => {
+                void onInputDeviceChange(event.target.value);
+              }}
               className="min-w-[220px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
             >
               {inputDevices.map((device: VoiceInputDevice, index: number) => (
@@ -150,7 +154,9 @@ export const VoiceControls = ({
             {t("voice.screen_source")}
             <select
               value={selectedScreenSourceId}
-              onChange={(event) => onScreenSourceChange(event.target.value)}
+              onChange={(event) => {
+                void onScreenSourceChange(event.target.value);
+              }}
               className="max-w-[300px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
               disabled={!connected}
             >
@@ -165,7 +171,9 @@ export const VoiceControls = ({
           </label>
 
           <button
-            onClick={onRefreshScreenSources}
+            onClick={() => {
+              void onRefreshScreenSources();
+            }}
             className="rounded-md border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-black/35 hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             disabled={!connected}
           >
