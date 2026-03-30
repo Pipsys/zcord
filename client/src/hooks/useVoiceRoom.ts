@@ -232,6 +232,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const pendingInitialOffersChannelRef = useRef<string | null>(null);
   const screenShareStatsRef = useRef<Map<string, { timestamp: number; frames: number }>>(new Map());
   const screenShareStatsTimerRef = useRef<number | null>(null);
+  const pendingRenegotiationsRef = useRef<Set<string>>(new Set());
   const connectedServerIdRef = useRef<string | null>(null);
   const connectedChannelIdRef = useRef<string | null>(null);
   const lastRejoinSocketRef = useRef<WebSocket | null>(null);
@@ -647,6 +648,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     peerMetaRef.current.delete(remoteUserId);
     screenSendersRef.current.delete(remoteUserId);
     pendingCandidatesRef.current.delete(remoteUserId);
+    pendingRenegotiationsRef.current.delete(remoteUserId);
     setRemoteStreams((current) => {
       const next = { ...current };
       delete next[remoteUserId];
@@ -679,12 +681,14 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         return;
       }
       if (peer.signalingState !== "stable") {
+        pendingRenegotiationsRef.current.add(remoteUserId);
         voiceWarn("skip renegotiation: signaling state is not stable", {
           remoteUserId,
           state: peer.signalingState,
         });
         return;
       }
+      pendingRenegotiationsRef.current.delete(remoteUserId);
 
       try {
         const offer = await peer.createOffer();
@@ -957,11 +961,23 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           closePeer(remoteUserId);
         }
       };
+      peer.onsignalingstatechange = () => {
+        const state = peer.signalingState;
+        voiceLog("peer signaling state", { remoteUserId, state });
+        if (state !== "stable") {
+          return;
+        }
+        if (!pendingRenegotiationsRef.current.has(remoteUserId)) {
+          return;
+        }
+        pendingRenegotiationsRef.current.delete(remoteUserId);
+        void renegotiatePeer(remoteUserId);
+      };
 
       peersRef.current.set(remoteUserId, peer);
       return peer;
     },
-    [closePeer, sendGatewayEvent],
+    [closePeer, renegotiatePeer, sendGatewayEvent],
   );
 
   const join = useCallback(
