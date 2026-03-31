@@ -1803,6 +1803,17 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
     isRouteActive && selectedDm && activeDmCall && activeDmCall.channelId === selectedDm.channelId
       ? activeDmCall
       : null;
+  const activeDmCallBackgroundBanner = useMemo(() => {
+    if (!activeDmCallForSelectedChat) {
+      return null;
+    }
+    const peerBanner = activeDmCallForSelectedChat.peerBanner?.trim();
+    if (peerBanner && peerBanner.length > 0) {
+      return peerBanner;
+    }
+    const ownBanner = effectiveUser?.banner_url?.trim();
+    return ownBanner && ownBanner.length > 0 ? ownBanner : null;
+  }, [activeDmCallForSelectedChat, effectiveUser?.banner_url]);
 
   const renderCallStatePills = (compact = false) => {
     if (!activeDmCall) {
@@ -2032,9 +2043,9 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           {activeDmCallForSelectedChat ? (
             <div className="call-strip-surface ui-anim-fade border-b border-black/35">
               <div className="relative h-[240px] overflow-hidden">
-                {activeDmCallForSelectedChat.peerBanner ? (
+                {activeDmCallBackgroundBanner ? (
                   <img
-                    src={activeDmCallForSelectedChat.peerBanner}
+                    src={activeDmCallBackgroundBanner}
                     alt=""
                     aria-hidden
                     className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-30 blur-[1px]"

@@ -99,7 +99,7 @@ const AppShell = () => {
         <div className="ui-shell-main">
           <Sidebar />
           <main className="relative min-h-0 flex-1 overflow-hidden">
-            <div className="absolute inset-0">
+            <div className={`absolute inset-0 ${isHomeRoute ? "" : "pointer-events-none"}`}>
               <HomePage isRouteActive={isHomeRoute} />
             </div>
 
@@ -112,7 +112,7 @@ const AppShell = () => {
                   animate="animate"
                   exit="exit"
                   transition={contentTransition}
-                  className="h-full"
+                  className="relative z-[1] h-full"
                 >
                   <Outlet />
                 </motion.div>
