@@ -1,32 +1,65 @@
-﻿# --- OS / Editor ---
+# =========================
+# OS / IDE
+# =========================
 .DS_Store
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 *.swp
 *.swo
+*.tmp
+*.bak
 .idea/
 .vscode/
+*.code-workspace
 
-# --- Logs ---
+# =========================
+# Logs / diagnostics
+# =========================
 *.log
+*.log.*
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# --- Environment / Secrets ---
+# =========================
+# Environment / secrets
+# =========================
 .env
 .env.*
-!.env.example
+
 backend/.env
 backend/.env.*
-!backend/.env.example
+
 client/.env
 client/.env.*
-!client/.env.example
-secrets/
-certs/
 
-# --- Python (backend) ---
+secrets/*
+!secrets/.gitkeep
+!secrets/README.md
+
+certs/*
+!certs/.gitkeep
+!certs/README.md
+
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ovpn
+*.mobileprovision
+!*.pem.example
+!*.key.example
+
+# =========================
+# Python (backend)
+# =========================
 __pycache__/
 *.py[cod]
 *.pyo
@@ -36,6 +69,17 @@ __pycache__/
 .venv/
 venv/
 env/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+.tox/
+.nox/
+
 backend/.venv/
 backend/.pytest_cache/
 backend/.mypy_cache/
@@ -47,22 +91,44 @@ backend/build/
 backend/dist/
 backend/*.egg-info/
 
-# --- Node / Electron (client) ---
+# =========================
+# Node / Electron (client)
+# =========================
+node_modules/
 client/node_modules/
+
+.npm/
+.pnpm-store/
+.yarn/
+
+.vite/
 client/.vite/
+
+dist/
 client/dist/
+dist-electron/
 client/dist-electron/
+
+release/
 client/release/
+out/
 client/out/
-client/*.tsbuildinfo
 
-# --- Test / Coverage ---
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
+*.tsbuildinfo
 
-# --- Misc ---
+# =========================
+# Caches / reports
+# =========================
 .cache/
+.eslintcache
+.parcel-cache/
+coverage/
+*.lcov
+
+# =========================
+# Runtime data (local-only)
+# =========================
+*.pid
+*.pid.lock
+tmp/
+temp/

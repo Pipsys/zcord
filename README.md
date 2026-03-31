@@ -14,7 +14,7 @@ zcord is a full-stack desktop messenger inspired by modern community chat platfo
 1. Generate TLS certs into `certs/` (`fullchain.pem`, `privkey.pem`).
 2. Generate JWT RSA keys into `secrets/` (`jwt_private.pem`, `jwt_public.pem`).
 3. Copy and edit environment variables:
-   - backend: `backend/.env.example -> backend/.env`
+   - create local `backend/.env` manually (values are not stored in Git)
    - compose vars through shell or `.env`
 4. Start stack:
 
