@@ -1,67 +1,100 @@
-# zcord
+﻿# zcord
 
-zcord is a full-stack desktop messenger inspired by modern community chat platforms, with secure auth, WebSocket realtime events, encrypted DM support primitives, media uploads, and an Electron + React desktop client.
+<p align="center">
+  <strong>Modern desktop communication for teams, communities, and creators.</strong><br/>
+  Realtime chat, voice, calls, and screen sharing in one focused dark interface.
+</p>
 
-## Monorepo Layout
+<p align="center">
+  <img alt="Release" src="https://img.shields.io/github/v/release/Pipsys/Pawcord?display_name=tag&style=flat&logo=github" />
+  <img alt="macOS Installer" src="https://img.shields.io/github/actions/workflow/status/Pipsys/Pawcord/client-macos-installer.yml?branch=main&label=macOS%20installer" />
+  <img alt="Desktop" src="https://img.shields.io/badge/Desktop-Electron-0e1117?logo=electron&logoColor=9FEAF9" />
+  <img alt="Client" src="https://img.shields.io/badge/Client-React%20%2B%20TypeScript-0e1117?logo=typescript&logoColor=3178C6" />
+  <img alt="Backend" src="https://img.shields.io/badge/Backend-FastAPI-0e1117?logo=fastapi&logoColor=00C7B7" />
+  <img alt="Database" src="https://img.shields.io/badge/Data-PostgreSQL%20%2B%20Redis-0e1117?logo=postgresql&logoColor=336791" />
+</p>
 
-- `backend/` FastAPI + PostgreSQL + Redis + MinIO + Alembic
-- `client/` Electron + React + TypeScript + Tailwind + Framer Motion
-- `docker-compose.yml` local dev stack (Postgres, Redis, MinIO, backend, Nginx)
-- `docker-compose.prod.yml` production-oriented stack
+## Product Vision
 
-## Quick Start (Docker)
+zcord is built as a desktop-native communication hub: quick to open, predictable in behavior, and stable under realtime load.  
+It combines the workflows users expect every day: channel chat, direct messages, voice presence, DM calling, and screen sharing.
 
-1. Generate TLS certs into `certs/` (`fullchain.pem`, `privkey.pem`).
-2. Generate JWT RSA keys into `secrets/` (`jwt_private.pem`, `jwt_public.pem`).
-3. Copy and edit environment variables:
-   - create local `backend/.env` manually (values are not stored in Git)
-   - compose vars through shell or `.env`
-4. Start stack:
+## Preview
 
-```bash
-docker compose up --build
-```
+<p align="center">
+  <img src="docs/screenshots/preview-1.png" alt="zcord preview 1" width="220" />
+  <img src="docs/screenshots/preview-2.png" alt="zcord preview 2" width="220" />
+</p>
 
-5. Run migrations:
+## What Makes zcord Different
 
-```bash
-docker compose exec backend alembic upgrade head
-```
+- Realtime-first architecture: low-latency state sync for chat, presence, and calls
+- Desktop UX focus: clean dark UI, readable typography, low visual noise
+- Voice-ready stack: WebRTC signaling with STUN/TURN support
+- Security-minded core: hardened auth and constrained runtime boundaries
+- Fast release loop: in-app update pipeline for desktop clients
 
-Backend health: `https://localhost/health`
+## Core Capabilities
 
-## Backend Dev (without Docker)
+### Messaging
+- Instant delivery through WebSocket gateway
+- Reply, edit, delete, forward, and read-state flows
+- Media-aware messaging with upload pipeline
 
-```bash
-cd backend
-pip install -e .
-alembic upgrade head
-uvicorn app.main:app --reload
-```
+### Voice and Calls
+- Voice channel presence and participant state sync
+- DM call lifecycle: incoming, active, reconnect, leave
+- Screen share controls and participant-side stream handling
 
-## Client Dev
+### Desktop Experience
+- Electron shell with isolated renderer context
+- Native notifications and call UI surfaces
+- In-app updates: check, download, install, restart
 
-```bash
-cd client
-npm install
-npm run electron:dev
-```
+## Architecture
 
-## Tests
+- `client/` - Electron + React desktop application
+- `backend/` - FastAPI REST + WebSocket services
+- `postgres` - persistent relational store
+- `redis` - ephemeral presence/state helpers
+- `minio` - media and attachment storage
+- `nginx` - reverse proxy and TLS edge
 
-```bash
-cd backend
-pytest -q
-```
+This split keeps chat, media, auth, and call transport independently evolvable.
 
-Set `TEST_DATABASE_URL` to a PostgreSQL database before running tests.
+## Technology
 
-## Security Highlights
+| Layer | Technologies |
+|---|---|
+| Desktop | Electron, React, TypeScript, Vite, Tailwind, Framer Motion |
+| Backend | FastAPI, Pydantic, SQLAlchemy, Alembic |
+| Realtime | WebSocket gateway + event routing |
+| Data | PostgreSQL, Redis, MinIO |
+| Infra | Docker Compose, Nginx |
 
-- Argon2id password hashing (`time_cost=3`, `memory_cost=65536`)
-- RS256 access + refresh tokens with refresh rotation in DB
-- Token revocation checks for HTTP + WebSocket
-- Security headers + HTTPS enforcement in production
-- Rate limiting via `slowapi` and websocket event throttling
-- MIME-validated file uploads with 50MB cap + MinIO pre-signed downloads
-- Electron hardened runtime (`contextIsolation`, `nodeIntegration: false`, CSP, certificate pinning)
+## Security Posture
+
+- Argon2id password hashing
+- RS256 token strategy with refresh rotation
+- Upload validation and payload boundaries
+- API/WebSocket rate limiting
+- Restricted IPC bridge and isolated renderer runtime
+
+## Repository Structure
+
+- `client/` - desktop app and UI layer
+- `backend/` - API, auth, realtime, data services
+- `secrets/` - local-only placeholder mount point
+- `certs/` - local-only placeholder mount point
+- `.github/workflows/` - CI/CD and release automation
+
+## Development Direction
+
+- Improve call reliability under reconnect and route changes
+- Reach visual parity across chat/voice/settings surfaces
+- Expand moderation and server management controls
+- Strengthen diagnostics for production operations
+
+---
+
+<p align="center"><strong>zcord is under active development.</strong></p>

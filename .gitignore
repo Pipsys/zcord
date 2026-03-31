@@ -132,3 +132,9 @@ coverage/
 *.pid.lock
 tmp/
 temp/
+
+# =========================
+# Local repository mirrors / backups
+# =========================
+Pawcord-backup.git/
+Pawcord-sanitize.git/
