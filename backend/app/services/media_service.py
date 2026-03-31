@@ -18,8 +18,14 @@ from app.models.message import Message
 
 settings = get_settings()
 AVATAR_MAX_BYTES = 25 * 1024 * 1024
-PUBLIC_MEDIA_PREFIXES = ("avatars/", "server-icons/", "server-banners/")
+USER_BANNER_MAX_BYTES = 30 * 1024 * 1024
+PUBLIC_MEDIA_PREFIXES = ("avatars/", "user-banners/", "server-icons/", "server-banners/")
 ALLOWED_AVATAR_MIME_TYPES = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+}
+ALLOWED_USER_BANNER_MIME_TYPES = {
     "image/png": "png",
     "image/jpeg": "jpg",
     "image/gif": "gif",
@@ -187,6 +193,44 @@ class MediaService:
             raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Invalid image payload") from exc
 
         object_key = f"avatars/{user_id}/{uuid.uuid4()}.{extension}"
+        self.ensure_bucket()
+        try:
+            self.client.put_object(
+                settings.minio_bucket,
+                object_key,
+                io.BytesIO(payload),
+                length=len(payload),
+                content_type=content_type,
+            )
+        except S3Error as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Storage temporarily unavailable") from exc
+
+        return object_key
+
+    async def upload_user_banner(self, user_id: uuid.UUID, upload_file: UploadFile) -> str:
+        if upload_file.size and upload_file.size > USER_BANNER_MAX_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="User banner exceeds 30MB")
+
+        payload = await upload_file.read()
+        if len(payload) > USER_BANNER_MAX_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="User banner exceeds 30MB")
+
+        guessed = magic.from_buffer(payload[:2048], mime=True)
+        content_type = guessed or upload_file.content_type or ""
+        extension = ALLOWED_USER_BANNER_MIME_TYPES.get(content_type)
+        if extension is None:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported user banner type. Allowed: PNG, JPG, GIF",
+            )
+
+        try:
+            with Image.open(io.BytesIO(payload)) as image:
+                image.verify()
+        except (UnidentifiedImageError, OSError) as exc:
+            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Invalid image payload") from exc
+
+        object_key = f"user-banners/{user_id}/{uuid.uuid4()}.{extension}"
         self.ensure_bucket()
         try:
             self.client.put_object(

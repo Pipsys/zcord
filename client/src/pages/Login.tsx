@@ -83,7 +83,7 @@ const LoginPage = () => {
         <label className="mb-3 block">
           <span className="mb-1.5 block text-sm font-medium text-paw-text-secondary">{t("auth.email_or_username")}</span>
           <input
-            className="h-11 w-full rounded-md border border-white/12 bg-[#1e1f22] px-3 text-[14px] leading-5 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
+            className="h-11 w-full rounded-md border border-white/12 bg-[#0f1116] px-3 text-[14px] leading-5 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
             value={login}
             onChange={(event) => setLogin(event.target.value)}
             disabled={isSubmitting}
@@ -95,7 +95,7 @@ const LoginPage = () => {
           <span className="mb-1.5 block text-sm font-medium text-paw-text-secondary">{t("auth.password")}</span>
           <input
             type="password"
-            className="h-11 w-full rounded-md border border-white/12 bg-[#1e1f22] px-3 text-[14px] leading-5 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
+            className="h-11 w-full rounded-md border border-white/12 bg-[#0f1116] px-3 text-[14px] leading-5 text-paw-text-primary outline-none transition focus:border-paw-accent focus:ring-2 focus:ring-paw-accent/30"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             disabled={isSubmitting}
@@ -116,3 +116,4 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
+

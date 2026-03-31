@@ -24,6 +24,7 @@ import { MemberList } from "@/components/layout/MemberList";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { AppLoader } from "@/components/ui/AppLoader";
 import { useI18n } from "@/i18n/provider";
@@ -643,12 +644,12 @@ const ServerPage = () => {
       />
 
       <section className="flex min-w-0 flex-1 flex-col bg-paw-bg-primary">
-        <header className="flex h-12 items-center justify-between border-b border-black/35 bg-paw-bg-secondary px-4">
+        <header className="ui-header-bar flex items-center justify-between">
           <div className="min-w-0 flex items-center gap-3">
             <Avatar src={currentServer?.icon_url ?? null} label={currentServer?.name ?? "server"} size="sm" />
             <div className="min-w-0">
-              <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-paw-text-muted">{currentServer?.name ?? "Server"}</p>
-              <p className="truncate text-sm font-semibold text-paw-text-secondary">
+              <p className="typo-meta truncate font-semibold uppercase tracking-wide">{currentServer?.name ?? "Server"}</p>
+              <p className="typo-title-md truncate">
                 <span className="text-paw-text-muted"># </span>
                 {activeChannel?.name ?? t("server.no_channel_selected")}
               </p>
@@ -657,10 +658,10 @@ const ServerPage = () => {
 
           <div className="hidden sm:flex items-center gap-2">
             <span
-              className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+              className={`rounded-md border px-2 py-1 typo-meta font-semibold ${
                 activeChannel?.type === "voice"
                   ? "border-[#248046]/45 bg-[#248046]/20 text-[#8ee6a8]"
-                  : "border-white/10 bg-[#1e1f22] text-paw-text-muted"
+                  : "border-white/10 bg-[#0f1116] text-paw-text-muted"
               }`}
             >
               {activeChannel?.type === "voice" ? "Voice" : "Text"}
@@ -672,8 +673,8 @@ const ServerPage = () => {
           {!activeChannel ? (
             <div className="grid h-full place-items-center px-6 text-center">
               <div>
-                <p className="font-display text-lg text-paw-text-primary">{t("server.no_channel_selected")}</p>
-                <p className="mt-2 text-sm text-paw-text-secondary">{t("server.no_channel_hint")}</p>
+                <p className="typo-title-md text-paw-text-primary">{t("server.no_channel_selected")}</p>
+                <p className="typo-body mt-2 text-paw-text-secondary">{t("server.no_channel_hint")}</p>
                 {(channels?.length ?? 0) === 0 ? (
                   <Button className="mt-4" onClick={() => void createDefaultChannel()}>
                     {t("server.create_default_channel")}
@@ -771,13 +772,13 @@ const ServerPage = () => {
         <div className="space-y-4">
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("channels.rename_label")}</label>
-            <input
+            <Input
               value={renameChannelDraft}
               onChange={(event) => setRenameChannelDraft(event.target.value)}
               placeholder={
                 renameChannelTarget?.type === "voice" ? t("channels.rename_placeholder_voice") : t("channels.rename_placeholder_text")
               }
-              className="popup-input h-10 w-full px-3 text-sm"
+              className="popup-input"
               maxLength={100}
               autoFocus
             />
@@ -800,11 +801,11 @@ const ServerPage = () => {
 
       <Modal open={serverSettingsOpen} title={t("server.settings_title")} onClose={closeServerSettings}>
         <div className="space-y-4">
-          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="ui-surface flex items-center gap-3 bg-black/20 p-3 shadow-none">
             <Avatar src={serverIconPreview ?? currentServer?.icon_url ?? null} label={currentServer?.name ?? "server"} size="lg" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-paw-text-secondary">{currentServer?.name ?? "Server"}</p>
-              <p className="text-xs text-paw-text-muted">{t("server.settings_icon_hint")}</p>
+              <p className="typo-body truncate font-semibold text-paw-text-secondary">{currentServer?.name ?? "Server"}</p>
+              <p className="typo-meta">{t("server.settings_icon_hint")}</p>
             </div>
             <div className="flex shrink-0 gap-2">
               <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
@@ -826,11 +827,11 @@ const ServerPage = () => {
             </div>
           </div>
 
-          <div className="space-y-2 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="ui-surface space-y-2 bg-black/20 p-3 shadow-none">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-paw-text-secondary">{t("server.settings_banner_title")}</p>
-                <p className="text-xs text-paw-text-muted">{t("server.settings_banner_hint")}</p>
+                <p className="typo-body font-semibold text-paw-text-secondary">{t("server.settings_banner_title")}</p>
+                <p className="typo-meta">{t("server.settings_banner_hint")}</p>
               </div>
               <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
                 {t("server.settings_banner_upload")}
@@ -857,11 +858,11 @@ const ServerPage = () => {
 
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("server.settings_name_label")}</label>
-            <input
+            <Input
               value={serverNameDraft}
               onChange={(event) => setServerNameDraft(event.target.value)}
               placeholder={t("server.settings_name_placeholder")}
-              className="popup-input h-10 w-full px-3 text-sm"
+              className="popup-input"
               maxLength={100}
             />
           </div>
@@ -892,3 +893,4 @@ const ServerPage = () => {
 };
 
 export default ServerPage;
+

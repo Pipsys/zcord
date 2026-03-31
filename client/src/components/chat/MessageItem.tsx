@@ -55,6 +55,22 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 };
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const hasMentionForCurrentUser = (content: string, userId: string | null, username: string | null): boolean => {
+  if (!content || (!userId && !username)) {
+    return false;
+  }
+  if (userId && content.includes(`<@${userId}>`)) {
+    return true;
+  }
+  if (!username) {
+    return false;
+  }
+  const matcher = new RegExp(`(^|\\W)@${escapeRegExp(username)}(?=$|\\W)`, "i");
+  return matcher.test(content);
+};
+
 const ActionButton = ({
   title,
   onClick,
@@ -69,9 +85,8 @@ const ActionButton = ({
   <button
     type="button"
     title={title}
-    className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-[#1a1f28] transition ${
-      danger ? "hover:bg-[#48222a] hover:text-[#ff7b8c]" : "hover:bg-[#252d39] hover:text-paw-text-primary"
-    }`}
+    aria-label={title}
+    className={`chat-message-action-btn ${danger ? "chat-message-action-btn--danger" : ""}`}
     onClick={onClick}
   >
     {children}
@@ -94,11 +109,19 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
   const messageDateTime = format(new Date(message.created_at), "dd.MM.yyyy HH:mm", {
     locale: locale === "ru" ? ru : enUS,
   });
+  const messageTime = format(new Date(message.created_at), "HH:mm", {
+    locale: locale === "ru" ? ru : enUS,
+  });
 
   const deliveredToOthers = (receipt?.deliveredBy ?? []).some((userId) => userId !== currentUserId);
   const readByOthers = (receipt?.readBy ?? []).some((userId) => userId !== currentUserId);
-  const statusIcon = readByOthers ? "✓✓" : deliveredToOthers ? "✓" : "";
+  const statusIcon = readByOthers ? "\u2713\u2713" : deliveredToOthers ? "\u2713" : "";
   const statusTitle = readByOthers ? t("message.status_read") : deliveredToOthers ? t("message.status_delivered") : t("message.status_sent");
+  const resolvedReadBy = receipt?.readBy ?? message.read_by;
+  const hasReadState = Array.isArray(resolvedReadBy);
+  const isUnreadForCurrentUser = Boolean(currentUserId) && !isOwn && hasReadState && !resolvedReadBy.includes(currentUserId);
+  const isMentionedForCurrentUser = isUnreadForCurrentUser && hasMentionForCurrentUser(message.content, currentUserId, currentUser?.username ?? null);
+  const rowStateClass = isMentionedForCurrentUser ? "chat-message-row--mention" : isUnreadForCurrentUser ? "chat-message-row--unread" : "";
 
   const referencedAuthor = useMemo(() => {
     if (!referencedMessage) {
@@ -127,18 +150,24 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
 
   return (
     <>
-      <article className="group relative w-full px-2 py-0.5 hover:bg-white/[0.03]">
+      <article className={`chat-message-row group relative w-full px-2 py-0.5 ${rowStateClass}`}>
         <div className="flex">
-          <div className="mr-3 w-10 shrink-0 pt-0.5">{showAuthor ? <Avatar src={avatarSrc} label={authorName} size="md" /> : <div className="h-10 w-10" />}</div>
+          <div className="mr-3 w-10 shrink-0 pt-0.5">
+            {showAuthor ? (
+              <Avatar src={avatarSrc} label={authorName} size="md" />
+            ) : (
+              <span className="typo-meta invisible block px-1 pt-1 text-right group-hover:visible group-focus-within:visible">{messageTime}</span>
+            )}
+          </div>
 
           <div className="min-w-0 flex-1">
             {showAuthor ? (
               <div className="flex items-center gap-2">
-                <span className={`truncate text-base font-semibold ${isOwn ? "text-paw-accentSecondary" : "text-paw-text-primary"}`}>{authorName}</span>
-                <span className="shrink-0 text-xs text-paw-text-muted">{messageDateTime}</span>
-                {message.edited_at ? <span className="shrink-0 text-[11px] text-paw-text-muted">({t("message.edited")})</span> : null}
+                <span className={`typo-body truncate font-semibold ${isOwn ? "text-paw-accentSecondary" : "text-paw-text-primary"}`}>{authorName}</span>
+                <span className="typo-meta shrink-0">{messageDateTime}</span>
+                {message.edited_at ? <span className="typo-meta shrink-0">({t("message.edited")})</span> : null}
                 {isOwn && statusIcon ? (
-                  <span title={statusTitle} className={`shrink-0 text-[11px] font-semibold ${readByOthers ? "text-paw-accentSecondary" : "text-paw-text-muted"}`}>
+                  <span title={statusTitle} className={`typo-meta shrink-0 font-semibold ${readByOthers ? "text-paw-accentSecondary" : "text-paw-text-muted"}`}>
                     {statusIcon}
                   </span>
                 ) : null}
@@ -151,13 +180,13 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                 className={`mt-1 block max-w-[680px] rounded-md border-l-2 border-paw-accent/60 bg-white/[0.02] px-2 py-1 text-left ${showAuthor ? "" : "mt-0.5"}`}
                 onClick={() => onReply?.(referencedMessage)}
               >
-                <p className="truncate text-xs font-semibold text-paw-text-secondary">{referencedAuthor}</p>
-                <p className="truncate text-xs text-paw-text-muted">{referencedPreview}</p>
+                <p className="typo-meta truncate font-semibold text-paw-text-secondary">{referencedAuthor}</p>
+                <p className="typo-meta truncate">{referencedPreview}</p>
               </button>
             ) : null}
 
             {parsed.normal ? (
-              <p className={`whitespace-pre-wrap break-words text-[16px] leading-6 text-paw-text-secondary ${showAuthor ? "mt-0.5" : ""}`}>{parsed.normal}</p>
+              <p className={`typo-message whitespace-pre-wrap break-words text-paw-text-secondary ${showAuthor ? "mt-0.5" : ""}`}>{parsed.normal}</p>
             ) : null}
 
             {parsed.code ? <pre className="mt-1 overflow-auto rounded-lg bg-black/45 p-2.5 font-mono text-xs text-paw-text-primary">{parsed.code}</pre> : null}
@@ -218,12 +247,12 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                       className="flex min-w-[220px] max-w-[420px] items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2 hover:bg-white/10"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-paw-text-secondary">{attachment.filename}</p>
-                        <p className="text-xs text-paw-text-muted">
+                        <p className="typo-body truncate font-medium text-paw-text-secondary">{attachment.filename}</p>
+                        <p className="typo-meta">
                           {attachment.content_type} - {formatFileSize(attachment.size_bytes)}
                         </p>
                       </div>
-                      <span className="text-xs text-paw-text-muted">↗</span>
+                      <span className="typo-meta text-paw-text-muted">{"\u2197"}</span>
                     </a>
                   );
                 })}
@@ -232,8 +261,8 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
           </div>
         </div>
 
-        <div className="pointer-events-none absolute right-3 top-1 z-20 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-          <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-white/10 bg-[#11161e]/95 p-1 shadow-lg shadow-black/40">
+        <div className="chat-message-actions pointer-events-none absolute right-3 top-1 z-20 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="chat-message-action-toolbar pointer-events-auto">
             {onReply ? (
               <ActionButton title={t("message.action_reply")} onClick={() => onReply(message)}>
                 <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]">
@@ -278,7 +307,7 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
         ? createPortal(
             <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
               <div
-                className="flex w-full max-w-5xl flex-col rounded-2xl bg-[#121720] p-3 shadow-2xl shadow-black/70"
+                className="flex w-full max-w-5xl flex-col rounded-2xl bg-[#0a0d13] p-3 shadow-2xl shadow-black/70"
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -314,3 +343,5 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
     </>
   );
 };
+
+

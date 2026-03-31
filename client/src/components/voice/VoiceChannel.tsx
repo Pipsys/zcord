@@ -810,12 +810,15 @@ export const VoiceChannel = ({
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-paw-bg-primary">
       <div className="min-h-0 flex-1 p-3">
         {!connected ? (
-          <div className="grid h-full place-items-center rounded-lg border border-white/10 bg-paw-bg-secondary">
+          <div className="ui-anim-fade-slide grid h-full place-items-center rounded-lg border border-white/10 bg-paw-bg-secondary">
             <div className="text-center">
+              <div className="mb-3 flex justify-center">
+                <span className="call-state-pill">{t("voice.connect")}</span>
+              </div>
               <p className="mb-2 text-sm text-paw-text-secondary">{t("server.voice_panel_hint")}</p>
               <button
                 disabled={!channelId}
-                className="rounded-md border border-white/10 bg-paw-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-paw-accentSecondary disabled:cursor-not-allowed disabled:opacity-60"
+                className="voice-join-button disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={onConnect}
               >
                 {t("voice.connect")}
@@ -838,7 +841,7 @@ export const VoiceChannel = ({
                 <article
                   key={participant.user_id}
                   className={clsx(
-                    "group relative min-h-[260px] overflow-hidden rounded-lg border bg-[#111214] md:min-h-[320px] xl:min-h-[360px]",
+                    "voice-tile-motion group relative min-h-[260px] overflow-hidden rounded-lg border bg-[#111214] md:min-h-[320px] xl:min-h-[360px]",
                     isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                   )}
                 >
@@ -853,7 +856,7 @@ export const VoiceChannel = ({
                       className="h-full w-full bg-black object-contain"
                     />
                   ) : (
-                    <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
+                    <div className="relative grid h-full w-full place-items-center bg-[#171a20]">
                       <div
                         className={clsx(
                           "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
@@ -917,12 +920,12 @@ export const VoiceChannel = ({
                   ) : null}
 
                   {isSharingScreen && !isCurrentUser && !canViewScreen ? (
-                    <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/20 via-black/40 to-black/60 backdrop-blur-[4px]">
+                    <div className="voice-join-overlay ui-anim-fade absolute inset-0 grid place-items-center">
                       <button
                         onClick={() => {
                           void handleRecoverScreenShare(participant.user_id);
                         }}
-                        className="rounded-lg border border-[#7a86ff]/70 bg-[#5865f2]/90 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(22,27,49,0.5)] transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
+                        className="voice-join-button disabled:cursor-not-allowed disabled:opacity-70"
                         disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
                       >
                         {recoveringScreenByUserId[participant.user_id]
@@ -941,11 +944,11 @@ export const VoiceChannel = ({
                   <article
                     key={participant.user_id}
                     className={clsx(
-                      "relative min-h-[160px] overflow-hidden rounded-lg border bg-[#2b2d31] transition-all duration-200",
+                      "voice-tile-motion relative min-h-[160px] overflow-hidden rounded-lg border bg-[#171a20]",
                       isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                     )}
                   >
-                    <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
+                    <div className="relative grid h-full w-full place-items-center bg-[#171a20]">
                       <div
                         className={clsx(
                           "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
@@ -965,12 +968,12 @@ export const VoiceChannel = ({
                       <VoiceStateIndicators className="shrink-0" muted={isMuted} deafened={isDeafened} />
                     </div>
                     {isSharingScreen && !isCurrentUser && !canViewScreen ? (
-                      <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/20 via-black/40 to-black/60 backdrop-blur-[4px]">
+                      <div className="voice-join-overlay ui-anim-fade absolute inset-0 grid place-items-center">
                         <button
                           onClick={() => {
                             void handleRecoverScreenShare(participant.user_id);
                           }}
-                          className="rounded-lg border border-[#7a86ff]/70 bg-[#5865f2]/90 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(22,27,49,0.5)] transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
+                          className="voice-join-button disabled:cursor-not-allowed disabled:opacity-70"
                           disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
                         >
                           {recoveringScreenByUserId[participant.user_id]
@@ -990,7 +993,7 @@ export const VoiceChannel = ({
               <article
                 key={participant.user_id}
                 className={clsx(
-                  "group relative min-h-[180px] overflow-hidden rounded-lg border bg-[#2b2d31] transition-all duration-200",
+                  "voice-tile-motion group relative min-h-[180px] overflow-hidden rounded-lg border bg-[#171a20]",
                   isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                 )}
               >
@@ -1005,7 +1008,7 @@ export const VoiceChannel = ({
                     className="h-full w-full bg-black object-contain"
                   />
                 ) : (
-                  <div className="relative grid h-full w-full place-items-center bg-[#2b2d31]">
+                  <div className="relative grid h-full w-full place-items-center bg-[#171a20]">
                     <div
                       className={clsx(
                         "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
@@ -1069,12 +1072,12 @@ export const VoiceChannel = ({
                 ) : null}
 
                 {isSharingScreen && !isCurrentUser && (!screenStream || !canViewScreen) ? (
-                  <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/20 via-black/40 to-black/60 backdrop-blur-[4px]">
+                  <div className="voice-join-overlay ui-anim-fade absolute inset-0 grid place-items-center">
                     <button
                       onClick={() => {
                         void handleRecoverScreenShare(participant.user_id);
                       }}
-                      className="rounded-lg border border-[#7a86ff]/70 bg-[#5865f2]/90 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(22,27,49,0.5)] transition hover:bg-[#4f5bda] disabled:cursor-not-allowed disabled:opacity-70"
+                      className="voice-join-button disabled:cursor-not-allowed disabled:opacity-70"
                       disabled={Boolean(recoveringScreenByUserId[participant.user_id])}
                     >
                       {recoveringScreenByUserId[participant.user_id]
@@ -1268,3 +1271,4 @@ export const VoiceChannel = ({
     </section>
   );
 };
+

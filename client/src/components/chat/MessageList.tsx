@@ -21,12 +21,42 @@ const shouldShowAuthor = (current: Message, previous: Message | undefined): bool
   const currentTime = new Date(current.created_at).getTime();
   const previousTime = new Date(previous.created_at).getTime();
   const lessThanFiveMinutes = currentTime - previousTime < 5 * 60 * 1000;
+  const sameDay = new Date(current.created_at).toDateString() === new Date(previous.created_at).toDateString();
 
-  return !(previous.author_id === current.author_id && lessThanFiveMinutes);
+  return !(previous.author_id === current.author_id && lessThanFiveMinutes && sameDay);
 };
 
+const isSameDay = (left: Message, right: Message): boolean =>
+  new Date(left.created_at).toDateString() === new Date(right.created_at).toDateString();
+
+const formatDayDividerLabel = (value: Date, locale: string): string => {
+  const now = new Date();
+  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfValue = new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const dayDiff = Math.round((startOfNow - startOfValue) / (24 * 60 * 60 * 1000));
+
+  if (dayDiff === 0) {
+    return locale === "ru" ? "Сегодня" : "Today";
+  }
+  if (dayDiff === 1) {
+    return locale === "ru" ? "Вчера" : "Yesterday";
+  }
+
+  const resolvedLocale = locale === "ru" ? "ru-RU" : "en-US";
+  return new Intl.DateTimeFormat(resolvedLocale, {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(value);
+};
+
+type MessageListEntry =
+  | { type: "divider"; key: string; label: string }
+  | { type: "message"; key: string; message: Message; previous: Message | undefined };
+
 export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, onForward }: MessageListProps) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const parentRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const previousCountRef = useRef(0);
@@ -46,6 +76,27 @@ export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, 
       }, {}),
     [indexedMessages],
   );
+  const listEntries = useMemo<MessageListEntry[]>(() => {
+    const next: MessageListEntry[] = [];
+    for (let index = 0; index < indexedMessages.length; index += 1) {
+      const message = indexedMessages[index];
+      const previous = indexedMessages[index - 1];
+      if (!previous || !isSameDay(previous, message)) {
+        next.push({
+          type: "divider",
+          key: `divider-${new Date(message.created_at).toDateString()}`,
+          label: formatDayDividerLabel(new Date(message.created_at), locale),
+        });
+      }
+      next.push({
+        type: "message",
+        key: message.id,
+        message,
+        previous,
+      });
+    }
+    return next;
+  }, [indexedMessages, locale]);
 
   useEffect(() => {
     const parent = parentRef.current;
@@ -84,8 +135,8 @@ export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, 
     return (
       <div className="grid h-full place-items-center bg-paw-bg-primary px-6 text-center">
         <div>
-          <p className="text-lg font-semibold text-paw-text-secondary">{t("message.empty_title")}</p>
-          <p className="mt-2 text-sm text-paw-text-muted">{t("server.empty_chat_subtitle", { channel: channelName })}</p>
+          <p className="typo-title-md text-paw-text-secondary">{t("message.empty_title")}</p>
+          <p className="typo-body mt-2 text-paw-text-muted">{t("server.empty_chat_subtitle", { channel: channelName })}</p>
         </div>
       </div>
     );
@@ -94,15 +145,23 @@ export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, 
   return (
     <div ref={parentRef} className="h-full overflow-y-auto overflow-x-hidden">
       <div className="flex flex-col pb-3 pt-1">
-        {indexedMessages.map((message, index) => {
-          const previous = indexedMessages[index - 1];
-          const referencedMessage = message.reference_id ? messageById[message.reference_id] ?? null : null;
+        {listEntries.map((entry) => {
+          if (entry.type === "divider") {
+            return (
+              <div key={entry.key} className="chat-date-divider ui-anim-fade-slide">
+                <span className="chat-date-divider-line" />
+                <span className="chat-date-divider-label">{entry.label}</span>
+              </div>
+            );
+          }
+
+          const referencedMessage = entry.message.reference_id ? messageById[entry.message.reference_id] ?? null : null;
           return (
             <MessageItem
-              key={message.id}
-              message={message}
+              key={entry.key}
+              message={entry.message}
               referencedMessage={referencedMessage}
-              showAuthor={shouldShowAuthor(message, previous)}
+              showAuthor={shouldShowAuthor(entry.message, entry.previous)}
               onReply={onReply}
               onEdit={onEdit}
               onDelete={onDelete}
@@ -114,3 +173,4 @@ export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, 
     </div>
   );
 };
+

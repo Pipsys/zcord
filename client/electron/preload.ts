@@ -80,6 +80,8 @@ const pawcordApi = {
   },
   request: <T>(payload: ApiRequestPayload) => ipcRenderer.invoke("api:request", payload) as Promise<ApiResponse<T>>,
   uploadAvatar: <T>(payload: { file: ProfileUploadFilePayload }) => ipcRenderer.invoke("api:upload-avatar", payload) as Promise<ApiResponse<T>>,
+  uploadUserBanner: <T>(payload: { file: ProfileUploadFilePayload }) =>
+    ipcRenderer.invoke("api:upload-user-banner", payload) as Promise<ApiResponse<T>>,
   uploadServerIcon: <T>(payload: { serverId: string; file: ProfileUploadFilePayload }) =>
     ipcRenderer.invoke("api:upload-server-icon", payload) as Promise<ApiResponse<T>>,
   uploadServerBanner: <T>(payload: { serverId: string; file: ProfileUploadFilePayload }) =>

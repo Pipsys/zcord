@@ -25,6 +25,7 @@ import { MessageList } from "@/components/chat/MessageList";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Input } from "@/components/ui/Input";
 import { useI18n } from "@/i18n/provider";
 import { useRealtime } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
@@ -32,6 +33,12 @@ import { useChannelStore } from "@/store/channelStore";
 import { useMessageStore } from "@/store/messageStore";
 import { useServerStore } from "@/store/serverStore";
 import { useUiStore } from "@/store/uiStore";
+import {
+  LAYOUT_CHANNEL_LIST_DEFAULT_WIDTH,
+  CHANNEL_LIST_WIDTH_STORAGE_KEY,
+  clampChannelListWidth,
+  readStoredChannelListWidth,
+} from "@/theme/layout";
 import type { Channel, FriendRelation, FriendStatus, Message } from "@/types";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -46,6 +53,7 @@ interface IncomingDmCallInvite {
   callerId: string;
   callerName: string;
   callerAvatar: string | null;
+  callerBanner: string | null;
 }
 
 interface ActiveDmCall {
@@ -54,6 +62,7 @@ interface ActiveDmCall {
   peerId: string;
   peerName: string;
   peerAvatar: string | null;
+  peerBanner: string | null;
   stage: DmCallStage;
   isCaller: boolean;
 }
@@ -130,6 +139,21 @@ const formatPeerId = (relation: FriendRelation, currentUserId: string | null): s
   relation.requester_id === currentUserId ? relation.addressee_id : relation.requester_id;
 
 const shortId = (value: string): string => value.slice(0, 8);
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const hasMentionForCurrentUser = (content: string, userId: string | null, username: string | null): boolean => {
+  if (!content || (!userId && !username)) {
+    return false;
+  }
+  if (userId && content.includes(`<@${userId}>`)) {
+    return true;
+  }
+  if (!username) {
+    return false;
+  }
+  const matcher = new RegExp(`(^|\\W)@${escapeRegExp(username)}(?=$|\\W)`, "i");
+  return matcher.test(content);
+};
+
 const compactPreview = (value: string): string => {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized) {
@@ -169,6 +193,10 @@ const formatPeerAvatar = (relation: FriendRelation, currentUserId: string | null
   return relation.requester_id === currentUserId ? relation.addressee_avatar_url ?? null : relation.requester_avatar_url ?? null;
 };
 
+const formatPeerBanner = (relation: FriendRelation, currentUserId: string | null): string | null => {
+  return relation.requester_id === currentUserId ? relation.addressee_banner_url ?? null : relation.requester_banner_url ?? null;
+};
+
 const parseDmPeerId = (channel: Channel, currentUserId: string | null): string | null => {
   if (!currentUserId || channel.type !== "dm") {
     return null;
@@ -189,26 +217,6 @@ const parseDmPeerId = (channel: Channel, currentUserId: string | null): string |
     return left;
   }
   return null;
-};
-
-const CHANNEL_LIST_MIN_WIDTH = 220;
-const CHANNEL_LIST_MAX_WIDTH = 360;
-const CHANNEL_LIST_DEFAULT_WIDTH = 240;
-const CHANNEL_LIST_WIDTH_STORAGE_KEY = "zcord.channel-list-width";
-
-const clampChannelListWidth = (value: number): number =>
-  Math.min(CHANNEL_LIST_MAX_WIDTH, Math.max(CHANNEL_LIST_MIN_WIDTH, value));
-
-const readStoredChannelListWidth = (): number => {
-  if (typeof window === "undefined") {
-    return CHANNEL_LIST_DEFAULT_WIDTH;
-  }
-  const raw = window.localStorage.getItem(CHANNEL_LIST_WIDTH_STORAGE_KEY);
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) {
-    return CHANNEL_LIST_DEFAULT_WIDTH;
-  }
-  return clampChannelListWidth(parsed);
 };
 
 interface HomePageProps {
@@ -248,7 +256,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
   const resizeStateRef = useRef<{ active: boolean; startX: number; startWidth: number }>({
     active: false,
     startX: 0,
-    startWidth: CHANNEL_LIST_DEFAULT_WIDTH,
+    startWidth: LAYOUT_CHANNEL_LIST_DEFAULT_WIDTH,
   });
   const knownLastMessageByChannelRef = useRef<Record<string, string>>({});
   const prefetchedChannelIdsRef = useRef<Set<string>>(new Set());
@@ -259,10 +267,16 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
   const [remoteCallStream, setRemoteCallStream] = useState<MediaStream | null>(null);
   const [callMuted, setCallMuted] = useState(false);
   const [callDeafened, setCallDeafened] = useState(false);
-  const [isDmCallOverlayOpen, setIsDmCallOverlayOpen] = useState(false);
   const [dmCallElapsedSec, setDmCallElapsedSec] = useState(0);
+  const [incomingCallPopupPosition, setIncomingCallPopupPosition] = useState<{ x: number; y: number }>(() => ({
+    x: typeof window === "undefined" ? 0 : window.innerWidth / 2,
+    y: typeof window === "undefined" ? 0 : window.innerHeight / 2,
+  }));
+  const [isIncomingCallPopupDragging, setIsIncomingCallPopupDragging] = useState(false);
 
   const incomingCallInviteRef = useRef<IncomingDmCallInvite | null>(null);
+  const incomingCallPopupRef = useRef<HTMLDivElement | null>(null);
+  const incomingCallPopupDragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
   const activeDmCallRef = useRef<ActiveDmCall | null>(null);
   const callPeerRef = useRef<RTCPeerConnection | null>(null);
   const callLocalStreamRef = useRef<MediaStream | null>(null);
@@ -353,21 +367,125 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
     return t("dm.call_connected");
   }, [activeDmCall, t]);
 
+  const clampIncomingCallPopupPosition = useCallback(
+    (x: number, y: number, width?: number, height?: number): { x: number; y: number } => {
+      if (typeof window === "undefined") {
+        return { x, y };
+      }
+      const popupWidth = width ?? incomingCallPopupRef.current?.offsetWidth ?? 290;
+      const popupHeight = height ?? incomingCallPopupRef.current?.offsetHeight ?? 320;
+      const margin = 20;
+      const minX = margin + popupWidth / 2;
+      const maxX = Math.max(minX, window.innerWidth - margin - popupWidth / 2);
+      const minY = margin + popupHeight / 2;
+      const maxY = Math.max(minY, window.innerHeight - margin - popupHeight / 2);
+      return {
+        x: Math.min(maxX, Math.max(minX, x)),
+        y: Math.min(maxY, Math.max(minY, y)),
+      };
+    },
+    [],
+  );
+
+  const centerIncomingCallPopup = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    setIncomingCallPopupPosition(clampIncomingCallPopupPosition(window.innerWidth / 2, window.innerHeight / 2));
+  }, [clampIncomingCallPopupPosition]);
+
   useEffect(() => {
     incomingCallInviteRef.current = incomingCallInvite;
   }, [incomingCallInvite]);
 
   useEffect(() => {
+    if (!incomingCallInvite) {
+      incomingCallPopupDragRef.current = null;
+      setIsIncomingCallPopupDragging(false);
+      return;
+    }
+    centerIncomingCallPopup();
+  }, [centerIncomingCallPopup, incomingCallInvite]);
+
+  useEffect(() => {
+    if (!incomingCallInvite || typeof window === "undefined") {
+      return;
+    }
+    const handleResize = () => {
+      setIncomingCallPopupPosition((prev) => clampIncomingCallPopupPosition(prev.x, prev.y));
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [clampIncomingCallPopupPosition, incomingCallInvite]);
+
+  useEffect(() => {
     activeDmCallRef.current = activeDmCall;
   }, [activeDmCall]);
 
-  useEffect(() => {
-    if (activeDmCall?.callId) {
-      setIsDmCallOverlayOpen(true);
+  const handleIncomingCallPopupPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
       return;
     }
-    setIsDmCallOverlayOpen(false);
-  }, [activeDmCall?.callId]);
+    const popup = incomingCallPopupRef.current;
+    if (!popup) {
+      return;
+    }
+    event.preventDefault();
+    const popupRect = popup.getBoundingClientRect();
+    incomingCallPopupDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - popupRect.left,
+      offsetY: event.clientY - popupRect.top,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsIncomingCallPopupDragging(true);
+  }, []);
+
+  const handleIncomingCallPopupPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = incomingCallPopupDragRef.current;
+      const popup = incomingCallPopupRef.current;
+      if (!drag || drag.pointerId !== event.pointerId || !popup) {
+        return;
+      }
+      const nextLeft = event.clientX - drag.offsetX;
+      const nextTop = event.clientY - drag.offsetY;
+      setIncomingCallPopupPosition(
+        clampIncomingCallPopupPosition(
+          nextLeft + popup.offsetWidth / 2,
+          nextTop + popup.offsetHeight / 2,
+          popup.offsetWidth,
+          popup.offsetHeight,
+        ),
+      );
+    },
+    [clampIncomingCallPopupPosition],
+  );
+
+  const handleIncomingCallPopupPointerEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = incomingCallPopupDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    incomingCallPopupDragRef.current = null;
+    setIsIncomingCallPopupDragging(false);
+  }, []);
+
+  const focusActiveCallChat = useCallback(() => {
+    const call = activeDmCallRef.current;
+    if (!call) {
+      return;
+    }
+    setSelectedDm({
+      channelId: call.channelId,
+      peerId: call.peerId,
+      peerName: call.peerName,
+    });
+    navigate("/app/home");
+  }, [navigate]);
 
   useEffect(() => {
     if (!activeDmCall) {
@@ -404,7 +522,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!activeDmCallRef.current || isDmCallOverlayOpen) {
+      if (!activeDmCallRef.current) {
         return;
       }
       const key = event.key.toLowerCase();
@@ -413,12 +531,12 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
         return;
       }
       event.preventDefault();
-      setIsDmCallOverlayOpen(true);
+      focusActiveCallChat();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isDmCallOverlayOpen]);
+  }, [focusActiveCallChat]);
 
   const sendRealtimeEvent = useCallback(
     (type: string, data: Record<string, unknown>): boolean => {
@@ -432,14 +550,15 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
   );
 
   const resolvePeerMeta = useCallback(
-    (peerId: string): { name: string; avatar: string | null } => {
+    (peerId: string): { name: string; avatar: string | null; banner: string | null } => {
       const relation = (friends ?? []).find((item) => formatPeerId(item, currentUserId) === peerId);
       if (!relation) {
-        return { name: shortId(peerId), avatar: null };
+        return { name: shortId(peerId), avatar: null, banner: null };
       }
       return {
         name: formatPeerName(relation, currentUserId),
         avatar: formatPeerAvatar(relation, currentUserId),
+        banner: formatPeerBanner(relation, currentUserId),
       };
     },
     [currentUserId, friends],
@@ -545,8 +664,9 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
       callId,
       channelId,
       callerId,
-      callerName: peerMeta.name,
-      callerAvatar: peerMeta.avatar,
+      callerName: typeof parsed.caller_name === "string" && parsed.caller_name.trim().length > 0 ? parsed.caller_name : peerMeta.name,
+      callerAvatar: typeof parsed.caller_avatar_url === "string" ? parsed.caller_avatar_url : peerMeta.avatar,
+      callerBanner: typeof parsed.caller_banner_url === "string" ? parsed.caller_banner_url : peerMeta.banner,
     };
     setIncomingCallInvite(invite);
     incomingCallInviteRef.current = invite;
@@ -848,13 +968,15 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
     const callId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const peerMeta = resolvePeerMeta(selectedDm.peerId);
 
     const nextCall: ActiveDmCall = {
       callId,
       channelId: selectedDm.channelId,
       peerId: selectedDm.peerId,
       peerName: selectedDm.peerName,
-      peerAvatar: resolvePeerMeta(selectedDm.peerId).avatar,
+      peerAvatar: peerMeta.avatar,
+      peerBanner: peerMeta.banner,
       stage: "outgoing-ringing",
       isCaller: true,
     };
@@ -924,6 +1046,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
       peerId: invite.callerId,
       peerName: invite.callerName,
       peerAvatar: invite.callerAvatar,
+      peerBanner: invite.callerBanner,
       stage: "connecting",
       isCaller: false,
     };
@@ -1013,8 +1136,9 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           callId,
           channelId,
           callerId,
-          callerName: peerMeta.name,
-          callerAvatar: peerMeta.avatar,
+          callerName: typeof data.caller_name === "string" && data.caller_name.trim().length > 0 ? data.caller_name : peerMeta.name,
+          callerAvatar: typeof data.caller_avatar_url === "string" ? data.caller_avatar_url : peerMeta.avatar,
+          callerBanner: typeof data.caller_banner_url === "string" ? data.caller_banner_url : peerMeta.banner,
         };
         setIncomingCallInvite(invite);
         incomingCallInviteRef.current = invite;
@@ -1680,6 +1804,38 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
       ? activeDmCall
       : null;
 
+  const renderCallStatePills = (compact = false) => {
+    if (!activeDmCall) {
+      return null;
+    }
+    const pills: JSX.Element[] = [];
+    if (callMuted) {
+      pills.push(
+        <span key="muted" className="call-state-pill call-state-pill--danger">
+          {t("voice.mute")}
+        </span>,
+      );
+    }
+    if (callDeafened) {
+      pills.push(
+        <span key="deafened" className="call-state-pill call-state-pill--danger">
+          {t("voice.deafen")}
+        </span>,
+      );
+    }
+    if (activeDmCall.stage === "connected") {
+      pills.push(
+        <span key="duration" className="call-state-pill">
+          {formatCallDuration(dmCallElapsedSec)}
+        </span>,
+      );
+    }
+    if (pills.length === 0) {
+      return null;
+    }
+    return <div className={`flex flex-wrap items-center gap-1.5 ${compact ? "" : "justify-center"}`}>{pills}</div>;
+  };
+
   return (
     <>
       {isRouteActive ? (
@@ -1690,8 +1846,8 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
             type="button"
             className={`flex h-9 w-full items-center gap-2 rounded-md border px-3 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
               selectedDm === null && tab !== "add"
-                ? "border-white/20 bg-[#404249] text-paw-text-primary"
-                : "border-white/10 bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c]"
+                ? "border-white/20 bg-[#22262e] text-paw-text-primary"
+                : "border-white/10 bg-[#171a20] text-paw-text-secondary hover:bg-[#1f2229]"
             }`}
             onClick={() => {
               setSelectedDm(null);
@@ -1708,8 +1864,8 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
             type="button"
             className={`flex h-9 w-full items-center gap-2 rounded-md border px-3 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
               selectedDm === null && tab === "add"
-                ? "border-white/20 bg-[#404249] text-paw-text-primary"
-                : "border-white/10 bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c]"
+                ? "border-white/20 bg-[#22262e] text-paw-text-primary"
+                : "border-white/10 bg-[#171a20] text-paw-text-secondary hover:bg-[#1f2229]"
             }`}
             onClick={() => {
               setSelectedDm(null);
@@ -1723,7 +1879,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
             <span className="truncate">{t("home.sidebar_requests")}</span>
           </button>
         </div>
-        <p className="px-2 text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("home.sidebar_direct_messages")}</p>
+        <p className="typo-meta px-2 font-semibold uppercase tracking-wide">{t("home.sidebar_direct_messages")}</p>
         <div className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
           {acceptedFriends.length === 0 ? <p className="px-2 text-xs text-paw-text-muted">{t("home.no_active_contacts")}</p> : null}
           {acceptedFriends.map((relation) => {
@@ -1736,30 +1892,39 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
             const previewMessage = pickLatestMessage(channelMessages);
             const previewRaw = previewMessage?.content?.trim();
             const previewText = previewMessage ? compactPreview(previewRaw && previewRaw.length > 0 ? previewRaw : t("message.attachment_alt")) : t("home.dm_no_messages");
-            const unreadFromSnapshot =
+            const unreadFromSnapshotMessages =
               currentUserId !== null
-                ? channelMessages.filter((message) => message.author_id !== currentUserId && !(message.read_by ?? []).includes(currentUserId)).length
-                : 0;
+                ? channelMessages.filter((message) => message.author_id !== currentUserId && !(message.read_by ?? []).includes(currentUserId))
+                : [];
+            const unreadFromSnapshot = unreadFromSnapshotMessages.length;
             const unreadFromLive = channel ? unreadByChannel[channel.id] ?? 0 : 0;
             const unreadCount = active ? 0 : Math.max(unreadFromLive, unreadFromSnapshot);
             const unreadLabel = unreadCount > 99 ? "99+" : unreadCount;
+            const hasMentionInUnread =
+              !active &&
+              unreadFromSnapshotMessages.some((message) =>
+                hasMentionForCurrentUser(message.content, currentUserId, effectiveUser?.username ?? null),
+              );
+            const rowStateClass = hasMentionInUnread ? "ui-state-mention" : unreadCount > 0 ? "ui-state-unread" : "";
             return (
               <button
                 key={`${relation.requester_id}:${relation.addressee_id}`}
-                className={`group relative w-full overflow-hidden rounded-lg border px-2.5 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+                className={`ui-focus-ring ui-state-pressed group relative w-full overflow-hidden rounded-lg border px-2.5 py-2 text-left transition-colors duration-150 ${rowStateClass} ${
                   active
-                    ? "border-white/20 bg-[#404249] text-paw-text-primary"
-                    : "border-transparent text-paw-text-secondary hover:bg-[#35373c]"
+                    ? "border-white/20 bg-[#22262e] text-paw-text-primary"
+                    : "border-transparent text-paw-text-secondary hover:bg-[#1f2229]"
                 }`}
                 onClick={() => void handleOpenDirectMessage(peerId, peerName)}
               >
                 {active ? <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r bg-white/90" /> : null}
+                {!active && hasMentionInUnread ? <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r bg-[#f0b232]" /> : null}
+                {!active && !hasMentionInUnread && unreadCount > 0 ? <span className="absolute bottom-2 left-0 top-2 w-1 rounded-r bg-[#7b85ff]" /> : null}
                 <div className="flex items-center gap-2">
                   <Avatar src={peerAvatar} label={peerName} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <p className="truncate text-sm font-semibold">{peerName}</p>
+                        <p className="typo-body truncate font-semibold">{peerName}</p>
                         {active ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/85" /> : null}
                       </div>
                       {unreadCount > 0 ? (
@@ -1768,7 +1933,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-paw-text-muted">{previewText}</p>
+                    <p className="typo-meta mt-0.5 truncate">{previewText}</p>
                   </div>
                 </div>
               </button>
@@ -1779,31 +1944,31 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
         {voiceRoom.connectedChannelId ? (
           <div className="mt-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-[12px] font-semibold leading-4 text-[#8ee6a8]">{t("voice.connected")}</p>
+              <p className="typo-meta truncate font-semibold text-[#8ee6a8]">{t("voice.connected")}</p>
               <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-3 tracking-wide ${
+                className={`rounded-full border px-2 py-0.5 typo-meta font-semibold uppercase tracking-wide ${
                   gatewayStatus === "connected"
                     ? "border-[#248046]/35 bg-[#248046]/25 text-[#8ee6a8]"
                     : gatewayStatus === "reconnecting" || gatewayStatus === "connecting"
                       ? "border-[#f4b942]/35 bg-[#f4b942]/20 text-[#ffd890]"
-                      : "border-white/15 bg-[#1e1f22] text-paw-text-muted"
+                      : "border-white/15 bg-[#0f1116] text-paw-text-muted"
                 }`}
               >
                 {gatewayStatusLabel}
               </span>
             </div>
-            <p className="mt-1 truncate text-xs text-paw-text-secondary">
+            <p className="typo-meta mt-1 truncate text-paw-text-secondary">
               #{connectedVoiceChannel?.name ?? t("voice.title")}
               {connectedVoiceServer?.name ? ` / ${connectedVoiceServer.name}` : ""}
             </p>
             <div className="mt-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] text-paw-text-muted">
+              <p className="typo-meta text-paw-text-muted">
                 Ping: {gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)} ms` : "-"}
               </p>
               <button
                 type="button"
                 onClick={() => void voiceRoom.leave()}
-                className="rounded-md border border-white/15 bg-[#1e1f22] px-2 py-0.5 text-[11px] font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+                className="rounded-md border border-white/15 bg-[#0f1116] px-2 py-0.5 typo-meta font-semibold text-paw-text-secondary transition-colors hover:bg-[#171a20] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
               >
                 {t("voice.leave")}
               </button>
@@ -1811,17 +1976,17 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           </div>
         ) : null}
 
-        <div className="mt-2 rounded-lg border border-white/10 bg-[#232428] p-2">
+        <div className="ui-profile-card mt-2 p-2">
           <div className="flex items-center gap-2">
             <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-paw-text-secondary">{effectiveUser?.username ?? "guest"}</p>
-              <p className="truncate text-xs text-paw-text-muted">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
+              <p className="ui-profile-name typo-body truncate font-semibold">{effectiveUser?.username ?? "guest"}</p>
+              <p className="typo-meta truncate">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
             </div>
           </div>
           <div className="mt-2">
             <Link to="/app/settings" className="block w-full">
-              <Button className="w-full bg-[#2b2d31] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary shadow-none hover:bg-[#35373c]">{t("home.settings")}</Button>
+              <Button variant="secondary" size="sm" className="ui-profile-card-btn w-full">{t("home.settings")}</Button>
             </Link>
           </div>
         </div>
@@ -1837,19 +2002,21 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
 
       {selectedDm ? (
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-12 items-center border-b border-black/35 bg-paw-bg-secondary px-4">
+          <header className="ui-header-bar flex items-center">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-paw-text-muted">@</span>
-              <h2 className="text-[16px] font-semibold text-paw-text-secondary">{selectedDm.peerName}</h2>
+              <span className="typo-body text-paw-text-muted">@</span>
+              <h2 className="typo-title-md">{selectedDm.peerName}</h2>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => void startDirectCall()}
                 disabled={Boolean(activeDmCallRef.current) || Boolean(incomingCallInviteRef.current)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/10 bg-[#2b2d31] px-2.5 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                className="dm-chat-call-btn"
+                title={t("dm.call_button")}
+                aria-label={t("dm.call_button")}
               >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <path
                     d="M6.9 3.5h3.6c.6 0 1.1.4 1.3 1l1 3.3c.2.7-.1 1.4-.7 1.7l-1.6.8c1 2 2.6 3.6 4.6 4.6l.8-1.6c.3-.6 1-.9 1.7-.7l3.3 1c.6.2 1 .7 1 1.3v3.6c0 .8-.6 1.4-1.4 1.5h-1.1C10.1 21 3 13.9 2 5.1V3.9C2 3.1 2.6 2.5 3.4 2.5h3.5Z"
                     stroke="currentColor"
@@ -1858,45 +2025,48 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                     strokeLinejoin="round"
                   />
                 </svg>
-                {t("dm.call_button")}
               </button>
             </div>
           </header>
 
-          {activeDmCallForSelectedChat && !isDmCallOverlayOpen ? (
-            <div className="border-b border-black/35 bg-[#0b0d12]">
-              <div className="relative h-[300px] overflow-hidden">
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(96,165,250,0.24),transparent_56%)]" />
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_65%_100%,rgba(14,165,233,0.16),transparent_62%)]" />
-                <div className="absolute right-4 top-4 z-[2] rounded-full border border-white/12 bg-black/45 px-3 py-1 text-[11px] font-semibold text-paw-text-secondary backdrop-blur-md">
+          {activeDmCallForSelectedChat ? (
+            <div className="call-strip-surface ui-anim-fade border-b border-black/35">
+              <div className="relative h-[240px] overflow-hidden">
+                {activeDmCallForSelectedChat.peerBanner ? (
+                  <img
+                    src={activeDmCallForSelectedChat.peerBanner}
+                    alt=""
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-30 blur-[1px]"
+                  />
+                ) : null}
+                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(9,11,16,0.58),rgba(9,11,16,0.88))]" />
+                <div className="call-state-pill call-state-pill--active absolute right-4 top-4 z-[2]">
                   {activeDmCallForSelectedChat.stage === "connected"
                     ? `${t("dm.call_connected")} • ${formatCallDuration(dmCallElapsedSec)}`
                     : activeDmCallStageLabel}
                 </div>
 
-                <div className="relative z-[1] flex h-full flex-col items-center justify-center pb-16 pt-8">
-                  <div className="mb-4 flex items-center gap-3">
-                    <div className="rounded-full border border-white/15 bg-[#1a1e29]/90 p-1.5 shadow-[0_14px_32px_rgba(0,0,0,0.45)]">
+                <div className="relative z-[1] flex h-full flex-col items-center justify-center pb-14 pt-6">
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="rounded-full border border-white/14 bg-[#151923]/92 p-1">
                       <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "you"} size="lg" online />
                     </div>
-                    <div className="rounded-full border border-white/15 bg-[#1a1e29]/90 p-1.5 shadow-[0_14px_32px_rgba(0,0,0,0.45)]">
+                    <div className="rounded-full border border-white/14 bg-[#151923]/92 p-1">
                       <Avatar src={activeDmCallForSelectedChat.peerAvatar} label={activeDmCallForSelectedChat.peerName} size="lg" online />
                     </div>
                   </div>
-                  <p className="max-w-[420px] truncate text-xl font-semibold tracking-tight text-paw-text-secondary">{activeDmCallForSelectedChat.peerName}</p>
-                  <p className="mt-1 text-sm text-paw-text-muted">{activeDmCallStageLabel}</p>
+                  <p className="dm-call-peer-name max-w-[420px] truncate">{activeDmCallForSelectedChat.peerName}</p>
+                  <p className="dm-call-stage-text mt-1">{activeDmCallStageLabel}</p>
+                  <div className="mt-2">{renderCallStatePills()}</div>
                 </div>
 
                 <div className="absolute bottom-5 left-1/2 z-[2] -translate-x-1/2">
-                  <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-[#12151f]/94 p-2 shadow-[0_18px_44px_rgba(0,0,0,0.52)] backdrop-blur-md">
+                  <div className="call-control-dock dm-call-control-dock">
                     <button
                       type="button"
                       onClick={toggleDirectCallMute}
-                      className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-                        callMuted
-                          ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
-                          : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
-                      }`}
+                      className={`call-control-btn dm-call-control-btn ${callMuted ? "call-control-btn--active" : ""}`}
                       title={callMuted ? t("dm.call_unmute") : t("dm.call_mute")}
                     >
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -1909,11 +2079,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                     <button
                       type="button"
                       onClick={toggleDirectCallDeafen}
-                      className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-                        callDeafened
-                          ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
-                          : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
-                      }`}
+                      className={`call-control-btn dm-call-control-btn ${callDeafened ? "call-control-btn--active" : ""}`}
                       title={callDeafened ? t("dm.call_undeafen") : t("dm.call_deafen")}
                     >
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -1925,25 +2091,15 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
 
                     <button
                       type="button"
-                      onClick={() => setIsDmCallOverlayOpen(true)}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#2b2d31] text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
-                      title={`${t("dm.call_return")} (Ctrl+Shift+R)`}
-                    >
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
-                        <path d="M8 3H3v5M21 8V3h-5M16 21h5v-5M3 16v5h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={endDirectCall}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#ed4245] text-white transition-colors hover:bg-[#c93a3e]"
+                      className="dm-call-hangup-btn"
                       title={t("dm.call_end")}
                     >
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
                         <path d="M6 12c3.5-3 8.5-3 12 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                         <path d="M8 14.5h8v3a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-3Z" fill="currentColor" />
                       </svg>
+                      <span>{t("dm.call_end")}</span>
                     </button>
                   </div>
                 </div>
@@ -1994,26 +2150,26 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
         </section>
       ) : (
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-12 items-center gap-2 border-b border-black/35 bg-paw-bg-secondary px-4">
+          <header className="ui-header-bar flex items-center gap-2">
             <button
-              className={`rounded-md px-3 py-1 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
-                tab === "online" ? "bg-[#404249] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#35373c]"
+              className={`rounded-md px-3 py-1 typo-body font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+                tab === "online" ? "bg-[#22262e] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#1f2229]"
               }`}
               onClick={() => setTab("online")}
             >
               {t("home.tab_online")}
             </button>
             <button
-              className={`rounded-md px-3 py-1 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
-                tab === "all" ? "bg-[#404249] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#35373c]"
+              className={`rounded-md px-3 py-1 typo-body font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+                tab === "all" ? "bg-[#22262e] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#1f2229]"
               }`}
               onClick={() => setTab("all")}
             >
               {t("home.tab_all")}
             </button>
             <button
-              className={`rounded-md px-3 py-1 text-sm font-semibold leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
-                tab === "add" ? "bg-paw-accent text-white" : "text-paw-text-muted hover:bg-[#35373c]"
+              className={`rounded-md px-3 py-1 typo-body font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+                tab === "add" ? "bg-paw-accent text-white" : "text-paw-text-muted hover:bg-[#1f2229]"
               }`}
               onClick={() => setTab("add")}
             >
@@ -2024,18 +2180,18 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           <div className="flex min-h-0 flex-1">
             <main className="flex-1 overflow-auto p-4">
               {isAddTab ? (
-                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.22)]">
+                <section className="ui-surface p-5">
                   <div className="mb-5">
-                    <h3 className="text-base font-semibold text-paw-text-secondary">{t("home.add_friend_title")}</h3>
-                    <p className="mt-1 max-w-2xl text-sm leading-6 text-paw-text-muted">{t("home.add_friend_description")}</p>
+                    <h3 className="typo-title-md">{t("home.add_friend_title")}</h3>
+                    <p className="typo-body mt-1 max-w-2xl text-paw-text-muted">{t("home.add_friend_description")}</p>
                   </div>
 
                   <form onSubmit={handleFriendRequest} className="flex flex-col gap-3 md:flex-row">
-                    <input
+                    <Input
                       value={friendId}
                       onChange={(event) => setFriendId(event.target.value)}
                       placeholder={t("home.friend_id_placeholder")}
-                    className="h-11 flex-1 rounded-xl border border-white/10 bg-[#1e1f22] px-4 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
+                      className="h-11 flex-1 rounded-xl px-4"
                     />
                     <Button type="submit" className="min-w-[180px] justify-center" disabled={sendFriendRequest.isPending}>
                       {t("home.send_request")}
@@ -2043,10 +2199,10 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                   </form>
 
                   <div className="mt-6 grid gap-4 xl:grid-cols-2">
-                    <section className="rounded-xl border border-white/10 bg-[#232428] p-4">
+                    <section className="ui-surface-elevated rounded-xl border border-white/10 p-4">
                       <div className="mb-3">
-                        <h4 className="text-sm font-semibold text-paw-text-secondary">{t("home.incoming_requests_title")}</h4>
-                        <p className="mt-1 text-xs leading-5 text-paw-text-muted">{t("home.incoming_requests_description")}</p>
+                        <h4 className="typo-body font-semibold text-paw-text-secondary">{t("home.incoming_requests_title")}</h4>
+                        <p className="typo-meta mt-1 leading-5">{t("home.incoming_requests_description")}</p>
                       </div>
 
                       <div className="space-y-2">
@@ -2072,10 +2228,10 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                       </div>
                     </section>
 
-                    <section className="rounded-xl border border-white/10 bg-[#232428] p-4">
+                    <section className="ui-surface-elevated rounded-xl border border-white/10 p-4">
                       <div className="mb-3">
-                        <h4 className="text-sm font-semibold text-paw-text-secondary">{t("home.outgoing_requests_title")}</h4>
-                        <p className="mt-1 text-xs leading-5 text-paw-text-muted">{t("home.outgoing_requests_description")}</p>
+                        <h4 className="typo-body font-semibold text-paw-text-secondary">{t("home.outgoing_requests_title")}</h4>
+                        <p className="typo-meta mt-1 leading-5">{t("home.outgoing_requests_description")}</p>
                       </div>
 
                       <div className="space-y-2">
@@ -2104,11 +2260,11 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                 </section>
               ) : (
                 <>
-                  <input
+                  <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder={t("home.search_friends_placeholder")}
-                    className="mb-4 h-10 w-full rounded-md border border-white/10 bg-[#1e1f22] px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
+                    className="mb-4"
                   />
 
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-paw-text-muted">
@@ -2122,8 +2278,27 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                       const peerId = formatPeerId(relation, currentUserId);
                       const peerName = formatPeerName(relation, currentUserId);
                       const peerAvatar = formatPeerAvatar(relation, currentUserId);
+                      const channel = dmChannelByPeerId[peerId];
+                      const channelMessages = channel ? messagesByChannel[channel.id] ?? [] : [];
+                      const unreadSnapshotMessages =
+                        currentUserId !== null
+                          ? channelMessages.filter((message) => message.author_id !== currentUserId && !(message.read_by ?? []).includes(currentUserId))
+                          : [];
+                      const unreadSnapshotCount = unreadSnapshotMessages.length;
+                      const unreadLiveCount = channel ? unreadByChannel[channel.id] ?? 0 : 0;
+                      const unreadCount = Math.max(unreadSnapshotCount, unreadLiveCount);
+                      const unreadLabel = unreadCount > 99 ? "99+" : unreadCount;
+                      const hasMentionInUnread = unreadSnapshotMessages.some((message) =>
+                        hasMentionForCurrentUser(message.content, currentUserId, effectiveUser?.username ?? null),
+                      );
+                      const rowStateClass = hasMentionInUnread ? "ui-state-mention" : unreadCount > 0 ? "ui-state-unread" : "";
                       return (
-                        <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-2 hover:border-white/10 hover:bg-white/[0.03]">
+                        <div
+                          key={`${relation.requester_id}:${relation.addressee_id}`}
+                          className={`relative flex items-center justify-between rounded-lg border border-transparent px-3 py-2 hover:border-white/10 hover:bg-white/[0.03] ${rowStateClass}`}
+                        >
+                          {hasMentionInUnread ? <span className="absolute bottom-1 left-0 top-1 w-1 rounded-r bg-[#f0b232]" /> : null}
+                          {!hasMentionInUnread && unreadCount > 0 ? <span className="absolute bottom-1 left-0 top-1 w-1 rounded-r bg-[#7b85ff]" /> : null}
                           <div className="flex min-w-0 items-center gap-2">
                             <Avatar src={peerAvatar} label={peerName} size="sm" />
                             <div className="min-w-0">
@@ -2131,7 +2306,18 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                               <p className="truncate text-xs text-paw-text-muted">{getPeerPresenceLabel(relation)}</p>
                             </div>
                           </div>
-                          <p className="text-xs text-paw-text-muted">{new Date(relation.created_at).toLocaleDateString()}</p>
+                          <div className="flex items-center gap-2">
+                            {hasMentionInUnread ? (
+                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f0b232] px-1.5 text-[11px] font-bold leading-none text-[#1a1f22]">
+                                @
+                              </span>
+                            ) : unreadCount > 0 ? (
+                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#3b82f6] px-1.5 text-[11px] font-bold leading-none text-white">
+                                {unreadLabel}
+                              </span>
+                            ) : null}
+                            <p className="text-xs text-paw-text-muted">{new Date(relation.created_at).toLocaleDateString()}</p>
+                          </div>
                         </div>
                       );
                     })}
@@ -2140,25 +2326,25 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
               )}
             </main>
 
-            <aside className="hidden w-80 border-l border-black/35 bg-paw-bg-secondary p-4 xl:block">
-              <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <h4 className="mb-2 text-sm font-semibold text-paw-text-secondary">{t("home.tools_title")}</h4>
+            <aside className="hidden w-[var(--layout-home-tools-width)] border-l border-black/35 bg-paw-bg-secondary p-4 xl:block">
+              <section className="ui-surface p-4">
+                <h4 className="typo-body mb-2 font-semibold text-paw-text-secondary">{t("home.tools_title")}</h4>
 
-                <div className="mb-4 rounded-lg border border-white/10 bg-[#1e1f22] p-2 text-xs">
-                  <p className="text-paw-text-muted">{t("home.my_id")}</p>
-                  <p className="mt-1 truncate text-paw-text-secondary">{effectiveUser?.id ?? t("common.none")}</p>
-                  <Button className="mt-2 w-full bg-[#2b2d31] text-xs text-paw-text-secondary shadow-none hover:bg-[#35373c]" onClick={() => void copyId()}>
+                <div className="mb-4 rounded-lg border border-white/10 bg-[#0f1116] p-2 text-xs">
+                  <p className="typo-meta">{t("home.my_id")}</p>
+                  <p className="typo-body mt-1 truncate text-paw-text-secondary">{effectiveUser?.id ?? t("common.none")}</p>
+                  <Button variant="secondary" size="sm" className="mt-2 w-full" onClick={() => void copyId()}>
                     {t("home.copy_id")}
                   </Button>
                 </div>
 
                 <form onSubmit={handleCreateServer} className="space-y-2">
-                  <label className="text-xs text-paw-text-muted">{t("home.server_name_label")}</label>
-                  <input
+                  <label className="typo-meta">{t("home.server_name_label")}</label>
+                  <Input
                     value={serverName}
                     onChange={(event) => setServerName(event.target.value)}
                     placeholder={t("home.server_name_placeholder")}
-                    className="h-9 w-full rounded-md border border-white/10 bg-[#1e1f22] px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
+                    className="h-9"
                   />
                   <Button type="submit" className="w-full" disabled={createServer.isPending || createChannel.isPending}>
                     {t("home.create_server_button")}
@@ -2166,12 +2352,12 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                 </form>
 
                 <form onSubmit={handleJoinServer} className="mt-4 space-y-2">
-                  <label className="text-xs text-paw-text-muted">{t("home.server_id_label")}</label>
-                  <input
+                  <label className="typo-meta">{t("home.server_id_label")}</label>
+                  <Input
                     value={joinServerId}
                     onChange={(event) => setJoinServerId(event.target.value)}
                     placeholder={t("home.friend_id_placeholder")}
-                    className="h-9 w-full rounded-md border border-white/10 bg-[#1e1f22] px-3 text-sm text-paw-text-secondary placeholder:text-paw-text-muted focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
+                    className="h-9"
                   />
                   <Button type="submit" className="w-full" disabled={joinServer.isPending}>
                     {t("home.join_server_button")}
@@ -2185,77 +2371,8 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
         </div>
       ) : null}
 
-      {activeDmCall && isDmCallOverlayOpen ? (
-        <div className="fixed inset-0 z-[360]">
-          <div className="absolute inset-0 bg-[#090b12]/82 backdrop-blur-md" />
-          <div className="relative flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-white/10 bg-[#141720]/72 px-5 py-3 backdrop-blur-md">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-paw-text-muted">{t("dm.call_voice_call")}</p>
-                <p className="truncate text-sm font-semibold text-paw-text-secondary">{activeDmCall.peerName}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDmCallOverlayOpen(false)}
-                className="inline-flex h-9 items-center rounded-md border border-white/15 bg-[#2b2d31] px-3 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
-              >
-                {t("dm.call_overlay_close")}
-              </button>
-            </div>
-
-            <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24 pt-8">
-              <div className="relative mb-6 rounded-full border border-white/20 bg-[#1a1f2b]/86 p-4 shadow-[0_18px_48px_rgba(0,0,0,0.42)]">
-                <Avatar src={activeDmCall.peerAvatar} label={activeDmCall.peerName} size="xl" online />
-                <span className="pointer-events-none absolute -inset-1 rounded-full border border-paw-accent/25" />
-              </div>
-              <p className="text-2xl font-semibold tracking-tight text-paw-text-primary">{activeDmCall.peerName}</p>
-              <p className="mt-1 text-sm text-paw-text-muted">{activeDmCallStageLabel}</p>
-              {activeDmCall.stage === "connected" ? (
-                <p className="mt-2 rounded-full border border-white/15 bg-[#1a1d26] px-3 py-1 text-xs font-semibold text-paw-text-secondary">
-                  {t("dm.call_duration", { time: formatCallDuration(dmCallElapsedSec) })}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2">
-              <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-white/15 bg-[#1d212d]/92 px-3 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.46)] backdrop-blur-md">
-                <button
-                  type="button"
-                  onClick={toggleDirectCallMute}
-                  className={`inline-flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-xs font-semibold transition-colors ${
-                    callMuted
-                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
-                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
-                  }`}
-                >
-                  {callMuted ? t("dm.call_unmute") : t("dm.call_mute")}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleDirectCallDeafen}
-                  className={`inline-flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-xs font-semibold transition-colors ${
-                    callDeafened
-                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
-                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
-                  }`}
-                >
-                  {callDeafened ? t("dm.call_undeafen") : t("dm.call_deafen")}
-                </button>
-                <button
-                  type="button"
-                  onClick={endDirectCall}
-                  className="inline-flex h-11 min-w-11 items-center justify-center rounded-full bg-[#ed4245] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#c93a3e]"
-                >
-                  {t("dm.call_end")}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {activeDmCall && !isDmCallOverlayOpen && !activeDmCallForSelectedChat ? (
-        <div className="fixed bottom-6 right-6 z-[350] w-72 rounded-xl border border-white/15 bg-[#1f2330]/94 p-3 shadow-[0_18px_44px_rgba(0,0,0,0.5)] backdrop-blur-md">
+      {activeDmCall && !activeDmCallForSelectedChat ? (
+        <div className="call-mini-player-surface ui-anim-fade-slide fixed bottom-6 right-6 z-[350] w-72 p-3">
           <div className="mb-2 flex items-center gap-2">
             <Avatar src={activeDmCall.peerAvatar} label={activeDmCall.peerName} size="sm" online />
             <div className="min-w-0">
@@ -2263,11 +2380,12 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
               <p className="truncate text-xs text-paw-text-muted">{activeDmCallStageLabel}</p>
             </div>
           </div>
+          <div className="mb-2">{renderCallStatePills(true)}</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsDmCallOverlayOpen(true)}
-              className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-white/15 bg-[#2b2d31] px-2 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
+              onClick={focusActiveCallChat}
+              className="call-control-btn h-8 flex-1 rounded-md border-white/15 px-2 text-xs font-semibold"
               title="Ctrl+Shift+R"
             >
               {t("dm.call_return")}
@@ -2275,7 +2393,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
             <button
               type="button"
               onClick={endDirectCall}
-              className="inline-flex h-8 items-center justify-center rounded-md bg-[#ed4245] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#c93a3e]"
+              className="call-control-btn call-control-btn--danger h-8 rounded-md px-3 text-xs font-semibold"
             >
               {t("dm.call_end")}
             </button>
@@ -2286,18 +2404,39 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
       <audio ref={remoteCallAudioRef} autoPlay playsInline hidden />
 
       {incomingCallInvite ? (
-        <div className="pointer-events-none fixed bottom-5 left-5 z-[370] sm:left-[92px]">
-          <div className="pointer-events-auto w-[290px] rounded-2xl border border-white/12 bg-[#111319]/95 p-5 shadow-[0_26px_70px_rgba(0,0,0,0.58)] backdrop-blur-lg">
-            <div className="mb-5 flex flex-col items-center text-center">
+        <div className="pointer-events-none fixed inset-0 z-[370]">
+          <div
+            ref={incomingCallPopupRef}
+            className={`call-ring-popup call-ring-popup--centered pointer-events-auto relative w-[290px] overflow-hidden p-5 ${
+              isIncomingCallPopupDragging ? "is-dragging" : ""
+            }`}
+            style={{ left: `${incomingCallPopupPosition.x}px`, top: `${incomingCallPopupPosition.y}px` }}
+          >
+            {incomingCallInvite.callerBanner ? (
+              <img
+                src={incomingCallInvite.callerBanner}
+                alt=""
+                aria-hidden
+                className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-20 blur-[1px]"
+              />
+            ) : null}
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(12,14,20,0.32),rgba(12,14,20,0.84))]" />
+            <div
+              className="call-ring-popup-drag-area relative mb-5 flex flex-col items-center text-center"
+              onPointerDown={handleIncomingCallPopupPointerDown}
+              onPointerMove={handleIncomingCallPopupPointerMove}
+              onPointerUp={handleIncomingCallPopupPointerEnd}
+              onPointerCancel={handleIncomingCallPopupPointerEnd}
+            >
               <Avatar src={incomingCallInvite.callerAvatar} label={incomingCallInvite.callerName} size="xl" />
               <p className="mt-3 max-w-full truncate text-xl font-semibold tracking-tight text-paw-text-primary">{incomingCallInvite.callerName}</p>
               <p className="mt-1 text-sm text-paw-text-muted">{t("dm.call_incoming")}</p>
             </div>
-            <div className="flex items-center justify-center gap-4">
+            <div className="relative flex items-center justify-center gap-4">
               <button
                 type="button"
                 onClick={declineIncomingCall}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#ed4245] text-white transition-colors hover:bg-[#c93a3e]"
+                className="call-control-btn call-control-btn--danger h-12 w-12"
                 aria-label={t("dm.call_decline")}
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -2307,7 +2446,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
               <button
                 type="button"
                 onClick={() => void acceptIncomingCall()}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#3ba55d] text-white transition-colors hover:bg-[#2f8a4e]"
+                className="call-control-btn call-control-btn--accept h-12 w-12"
                 aria-label={t("dm.call_accept")}
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -2340,4 +2479,6 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
 };
 
 export default HomePage;
+
+
 

@@ -64,6 +64,7 @@ interface PawcordBridge {
   };
   request: <T>(payload: ApiRequestPayload) => Promise<{ ok: boolean; status: number; data: T }>;
   uploadAvatar: <T>(payload: { file: AttachmentUploadFilePayload }) => Promise<{ ok: boolean; status: number; data: T }>;
+  uploadUserBanner: <T>(payload: { file: AttachmentUploadFilePayload }) => Promise<{ ok: boolean; status: number; data: T }>;
   uploadServerIcon: <T>(payload: { serverId: string; file: AttachmentUploadFilePayload }) => Promise<{ ok: boolean; status: number; data: T }>;
   uploadServerBanner: <T>(payload: { serverId: string; file: AttachmentUploadFilePayload }) => Promise<{ ok: boolean; status: number; data: T }>;
   uploadAttachments: <T>(payload: { uploadId: string; messageId: string; files: AttachmentUploadFilePayload[] }) => Promise<{ ok: boolean; status: number; data: T }>;

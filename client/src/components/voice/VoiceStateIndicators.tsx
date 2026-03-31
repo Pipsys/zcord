@@ -93,7 +93,7 @@ export const VoiceAvatarStateBadge = ({ muted, deafened, className, size = "md" 
         <span
           key={state}
           className={clsx(
-            "grid place-items-center rounded-full border border-black/60 bg-[#111318]/95 text-[#b5bac1] shadow-[0_2px_8px_rgba(0,0,0,0.45)] ring-1 ring-[#2b2d31]",
+            "grid place-items-center rounded-full border border-black/60 bg-[#111318]/95 text-[#b5bac1] shadow-[0_2px_8px_rgba(0,0,0,0.45)] ring-1 ring-[#171a20]",
             preset.item,
           )}
         >
@@ -103,3 +103,4 @@ export const VoiceAvatarStateBadge = ({ muted, deafened, className, size = "md" 
     </span>
   );
 };
+

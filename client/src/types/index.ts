@@ -92,6 +92,8 @@ export interface FriendRelation {
   addressee_username?: string | null;
   requester_avatar_url?: string | null;
   addressee_avatar_url?: string | null;
+  requester_banner_url?: string | null;
+  addressee_banner_url?: string | null;
   peer_is_online: boolean;
   peer_was_recently_online: boolean;
   peer_last_seen_at: string | null;

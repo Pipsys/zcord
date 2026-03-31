@@ -2,11 +2,34 @@ import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-export const Button = ({ children, className, ...rest }: PropsWithChildren<ButtonHTMLAttributes<HTMLButtonElement>>) => (
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonSize = "sm" | "md" | "lg";
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}
+
+export const Button = ({
+  children,
+  className,
+  variant = "primary",
+  size = "md",
+  ...rest
+}: PropsWithChildren<ButtonProps>) => (
   <button
     className={twMerge(
       clsx(
-        "rounded-md border border-transparent bg-paw-accent px-4 py-2 text-sm font-semibold leading-5 text-white transition-colors duration-150 hover:bg-paw-accentSecondary active:bg-paw-accentSecondary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/40 disabled:cursor-not-allowed disabled:opacity-60",
+        "ui-btn focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/40",
+        {
+          "ui-btn-sm": size === "sm",
+          "ui-btn-md": size === "md",
+          "ui-btn-lg": size === "lg",
+          "ui-btn-primary": variant === "primary",
+          "ui-btn-secondary": variant === "secondary",
+          "ui-btn-ghost": variant === "ghost",
+          "ui-btn-danger": variant === "danger",
+        },
         className,
       ),
     )}

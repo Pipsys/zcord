@@ -10,7 +10,14 @@ import type { GatewayConnectionStatus } from "@/hooks/useWebSocket";
 import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
 import { useChannelStore } from "@/store/channelStore";
+import { useMessageStore } from "@/store/messageStore";
 import { useServerStore } from "@/store/serverStore";
+import {
+  LAYOUT_CHANNEL_LIST_DEFAULT_WIDTH,
+  CHANNEL_LIST_WIDTH_STORAGE_KEY,
+  clampChannelListWidth,
+  readStoredChannelListWidth,
+} from "@/theme/layout";
 import type { VoiceParticipant } from "@/store/voiceStore";
 import { useVoiceStore } from "@/store/voiceStore";
 import type { Channel } from "@/types";
@@ -40,14 +47,30 @@ const toParticipantName = (participant: VoiceParticipant, currentUserId: string 
   return `user-${participant.user_id.slice(0, 6)}`;
 };
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const hasMentionForCurrentUser = (content: string, userId: string | null, username: string | null): boolean => {
+  if (!content || (!userId && !username)) {
+    return false;
+  }
+  if (userId && content.includes(`<@${userId}>`)) {
+    return true;
+  }
+  if (!username) {
+    return false;
+  }
+  const matcher = new RegExp(`(^|\\W)@${escapeRegExp(username)}(?=$|\\W)`, "i");
+  return matcher.test(content);
+};
+
 const HashIcon = () => (
-  <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
+  <svg className="h-[var(--icon-size-md)] w-[var(--icon-size-md)] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
     <path d="M10 4L8 20M16 4L14 20M4 9H20M3 15H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
 
 const VoiceIcon = () => (
-  <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
+  <svg className="h-[var(--icon-size-md)] w-[var(--icon-size-md)] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
     <path d="M5 8V16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     <path d="M9 6V18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     <path d="M13 4V20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -56,7 +79,7 @@ const VoiceIcon = () => (
 );
 
 const GearIcon = () => (
-  <svg className="h-[15px] w-[15px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
+  <svg className="h-[var(--icon-size-sm)] w-[var(--icon-size-sm)] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden>
     <path
       d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.06-.94l1.69-1.32a.5.5 0 0 0 .12-.64l-1.6-2.77a.5.5 0 0 0-.6-.22l-1.99.8a7.23 7.23 0 0 0-1.63-.94l-.3-2.12A.5.5 0 0 0 14.34 3h-3.2a.5.5 0 0 0-.49.42l-.3 2.12c-.58.23-1.12.54-1.63.94l-1.99-.8a.5.5 0 0 0-.6.22L4.53 8.67a.5.5 0 0 0 .12.64l1.69 1.32c-.04.31-.06.62-.06.94s.02.63.06.94l-1.69 1.32a.5.5 0 0 0-.12.64l1.6 2.77c.14.24.42.34.68.24l1.99-.8c.51.4 1.05.72 1.63.94l.3 2.12c.04.24.25.42.49.42h3.2c.24 0 .45-.18.49-.42l.3-2.12c.58-.23 1.12-.54 1.63-.94l1.99.8c.26.1.54 0 .68-.24l1.6-2.77a.5.5 0 0 0-.12-.64l-1.69-1.32ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
       fill="currentColor"
@@ -64,30 +87,11 @@ const GearIcon = () => (
   </svg>
 );
 
-const sectionHeadingClass = "px-2 text-[11px] font-semibold uppercase tracking-[0.04em] leading-4 text-paw-text-muted";
+const sectionHeadingClass = "typo-meta px-2 font-semibold uppercase tracking-[0.04em]";
 const channelRowBaseClass =
-  "group flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[15px] leading-5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
+  "group flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left typo-body transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
 const iconActionButtonClass =
-  "grid h-6 w-6 place-items-center rounded-md border border-white/12 bg-black/25 text-paw-text-muted transition-colors hover:bg-white/10 hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-45";
-const CHANNEL_LIST_MIN_WIDTH = 220;
-const CHANNEL_LIST_MAX_WIDTH = 360;
-const CHANNEL_LIST_DEFAULT_WIDTH = 240;
-const CHANNEL_LIST_WIDTH_STORAGE_KEY = "zcord.channel-list-width";
-
-const clampChannelListWidth = (value: number): number =>
-  Math.min(CHANNEL_LIST_MAX_WIDTH, Math.max(CHANNEL_LIST_MIN_WIDTH, value));
-
-const readStoredChannelListWidth = (): number => {
-  if (typeof window === "undefined") {
-    return CHANNEL_LIST_DEFAULT_WIDTH;
-  }
-  const raw = window.localStorage.getItem(CHANNEL_LIST_WIDTH_STORAGE_KEY);
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) {
-    return CHANNEL_LIST_DEFAULT_WIDTH;
-  }
-  return clampChannelListWidth(parsed);
-};
+  "grid h-6 w-6 place-items-center rounded-md border border-white/12 bg-black/25 text-paw-text-muted transition-colors ui-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-45";
 
 export const ChannelList = ({
   connectedVoiceChannelId,
@@ -109,6 +113,7 @@ export const ChannelList = ({
   const channels = useChannelStore((state) => state.channels);
   const activeChannelId = useChannelStore((state) => state.activeChannelId);
   const setActiveChannel = useChannelStore((state) => state.setActiveChannel);
+  const messagesByChannel = useMessageStore((state) => state.byChannel);
   const servers = useServerStore((state) => state.servers);
   const activeServerId = useServerStore((state) => state.activeServerId);
   const participantsByChannel = useVoiceStore((state) => state.participantsByChannel);
@@ -117,7 +122,7 @@ export const ChannelList = ({
   const resizeStateRef = useRef<{ active: boolean; startX: number; startWidth: number }>({
     active: false,
     startX: 0,
-    startWidth: CHANNEL_LIST_DEFAULT_WIDTH,
+    startWidth: LAYOUT_CHANNEL_LIST_DEFAULT_WIDTH,
   });
   const previousConnectedVoiceChannelRef = useRef<string | null>(null);
   const connectAnimationTimeoutRef = useRef<number | null>(null);
@@ -131,6 +136,8 @@ export const ChannelList = ({
 
   const server = useMemo(() => servers.find((item) => item.id === activeServerId) ?? null, [servers, activeServerId]);
   const effectiveUser = user ?? meUser ?? null;
+  const currentUserId = effectiveUser?.id ?? null;
+  const currentUsername = effectiveUser?.username ?? null;
   const textChannels = useMemo(() => channels.filter((item) => item.type !== "voice"), [channels]);
   const voiceChannels = useMemo(() => channels.filter((item) => item.type === "voice"), [channels]);
   const voiceParticipantsByChannel = useMemo(() => {
@@ -298,13 +305,7 @@ export const ChannelList = ({
           setContext({ visible: true, x: event.clientX, y: event.clientY, channelId: channel.id });
         }}
       >
-        <div
-          className={`group flex h-9 items-center gap-2 rounded-md px-2.5 text-[15px] leading-5 transition-colors duration-150 ${
-            active
-              ? "bg-[#404249] text-paw-text-primary"
-              : "text-paw-text-muted hover:bg-[#35373c] hover:text-paw-text-secondary"
-          }`}
-        >
+        <div className={`${channelRowBaseClass} ${active ? "ui-state-active" : "text-paw-text-muted ui-state-hover"}`}>
           <button
             className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
             onClick={() => setActiveChannel(channel.id)}
@@ -316,8 +317,8 @@ export const ChannelList = ({
           </button>
 
           <button
-            className={`rounded px-2 py-0.5 text-[11px] font-semibold leading-4 tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
-              connected ? "bg-[#248046] text-white hover:bg-[#2a9351]" : "bg-[#41434a] text-paw-text-secondary hover:bg-[#4a4d55] hover:text-white"
+            className={`rounded px-2 py-0.5 typo-meta font-semibold tracking-[0.01em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
+              connected ? "bg-[#248046] text-white hover:bg-[#2a9351]" : "bg-[#41434a] text-paw-text-secondary hover:bg-[#282d36] hover:text-white"
             }`}
             onClick={() => {
               if (connected) {
@@ -337,11 +338,11 @@ export const ChannelList = ({
               const isSelf = participant.user_id === effectiveUser?.id;
               const name = toParticipantName(participant, effectiveUser?.id ?? null, effectiveUser?.username ?? null);
               const youLabelRaw = t("voice.you");
-              const youLabel = typeof youLabelRaw === "string" && youLabelRaw.trim().length > 0 ? youLabelRaw : locale === "ru" ? "Вы" : "you";
+              const youLabel = typeof youLabelRaw === "string" && youLabelRaw.trim().length > 0 ? youLabelRaw : locale === "ru" ? "Р’С‹" : "you";
               return (
                 <div
                   key={`${channel.id}-${participant.user_id}`}
-                  className="flex h-9 items-center gap-2.5 rounded-md px-1.5 text-[14px] leading-5 text-paw-text-secondary transition-colors hover:bg-white/10"
+                  className="flex h-9 items-center gap-2.5 rounded-md px-1.5 typo-body text-paw-text-secondary transition-colors hover:bg-white/10"
                 >
                   <span className="relative inline-flex">
                     <Avatar src={participant.avatar_url ?? null} label={name} size="md" online={!participant.muted && !participant.deafened} />
@@ -355,7 +356,7 @@ export const ChannelList = ({
                     <VoiceStateIndicators className="shrink-0" muted={participant.muted} deafened={participant.deafened} />
                   </span>
                   {participant.screen_sharing ? (
-                    <span className="rounded bg-[#da373c] px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-3 tracking-wide text-white">
+                    <span className="rounded bg-[#da373c] px-1.5 py-0.5 typo-meta font-semibold uppercase tracking-wide text-white">
                       {t("voice.live_badge")}
                     </span>
                   ) : null}
@@ -370,7 +371,7 @@ export const ChannelList = ({
 
   return (
     <section className="relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary" style={{ width: `${panelWidth}px` }}>
-      <header className="relative h-28 overflow-hidden border-b border-black/35 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
+      <header className="relative h-[var(--layout-server-hero-height)] overflow-hidden border-b border-black/35 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
         <div className="absolute inset-0">
           {server?.banner_url ? (
             <img src={server.banner_url} alt={server?.name ?? "Server"} className="h-full w-full object-cover" />
@@ -383,14 +384,14 @@ export const ChannelList = ({
         <div className="relative flex h-full flex-col justify-end gap-2 px-3 pb-3">
           <div className="flex min-w-0 items-center gap-2">
             <Avatar src={server?.icon_url ?? null} label={server?.name ?? "Server"} size="sm" />
-            <h2 className="truncate text-[15px] font-semibold text-white">{server?.name ?? "Server"}</h2>
+            <h2 className="typo-title-md truncate text-white">{server?.name ?? "Server"}</h2>
           </div>
 
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={onInvite}
-              className="h-7 rounded-md border border-white/15 bg-black/35 px-2.5 text-[11px] font-semibold leading-4 text-paw-text-secondary backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+              className="h-7 rounded-md border border-white/15 bg-black/35 px-2.5 typo-meta font-semibold text-paw-text-secondary backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             >
               {t("server.invite_button")}
             </button>
@@ -418,7 +419,7 @@ export const ChannelList = ({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 py-3" onClick={() => setContext((value) => ({ ...value, visible: false }))}>
+      <div className="min-h-0 flex-1 space-y-[var(--layout-section-gap)] overflow-y-auto px-2 py-3" onClick={() => setContext((value) => ({ ...value, visible: false }))}>
         <div>
           <div className="flex items-center justify-between px-2">
             <p className={sectionHeadingClass}>{t("channels.text_channels")}</p>
@@ -450,30 +451,48 @@ export const ChannelList = ({
             </div>
           </div>
           <div className="mt-1 space-y-0.5">
-            {textChannels.length === 0 ? <p className="px-2 py-1 text-xs text-paw-text-muted">{t("channels.empty")}</p> : null}
-            {textChannels.map((channel) => {
-              const active = activeChannelId === channel.id;
-              return (
-                <button
-                  key={channel.id}
+            {textChannels.length === 0 ? <p className="typo-meta px-2 py-1">{t("channels.empty")}</p> : null}
+             {textChannels.map((channel) => {
+               const active = activeChannelId === channel.id;
+               const channelMessages = messagesByChannel[channel.id] ?? [];
+               const unreadMessages =
+                 currentUserId !== null
+                   ? channelMessages.filter((message) => message.author_id !== currentUserId && !(message.read_by ?? []).includes(currentUserId))
+                   : [];
+               const unreadCount = active ? 0 : unreadMessages.length;
+               const unreadLabel = unreadCount > 99 ? "99+" : `${unreadCount}`;
+               const hasMentionInUnread = unreadMessages.some((message) =>
+                 hasMentionForCurrentUser(message.content, currentUserId, currentUsername),
+               );
+               const rowStateClass = !active ? (hasMentionInUnread ? "ui-state-mention" : unreadCount > 0 ? "ui-state-unread" : "") : "";
+               return (
+                 <button
+                   key={channel.id}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     setContext({ visible: true, x: event.clientX, y: event.clientY, channelId: channel.id });
                   }}
                   onClick={() => setActiveChannel(channel.id)}
-                  className={`${channelRowBaseClass} ${
-                    active
-                      ? "bg-[#404249] text-paw-text-primary"
-                      : "text-paw-text-muted hover:bg-[#35373c] hover:text-paw-text-secondary"
-                  }`}
-                >
-                  <span className="text-paw-text-muted">
-                    <HashIcon />
-                  </span>
-                  <span className="truncate">{channel.name}</span>
-                </button>
-              );
-            })}
+                   className={`${channelRowBaseClass} relative ${rowStateClass} ${active ? "ui-state-active" : "text-paw-text-muted ui-state-hover"}`}
+                 >
+                   {!active && hasMentionInUnread ? <span className="absolute bottom-1 left-0 top-1 w-0.5 rounded-r bg-[#f0b232]" /> : null}
+                   {!active && !hasMentionInUnread && unreadCount > 0 ? <span className="absolute bottom-1 left-0 top-1 w-0.5 rounded-r bg-[#7b85ff]" /> : null}
+                   <span className="text-paw-text-muted">
+                     <HashIcon />
+                   </span>
+                   <span className="truncate">{channel.name}</span>
+                   {hasMentionInUnread ? (
+                     <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f0b232] px-1.5 text-[11px] font-bold leading-none text-[#1a1f22]">
+                       @
+                     </span>
+                   ) : unreadCount > 0 ? (
+                     <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#3b82f6] px-1.5 text-[11px] font-bold leading-none text-white">
+                       {unreadLabel}
+                     </span>
+                   ) : null}
+                 </button>
+               );
+             })}
           </div>
         </div>
 
@@ -508,13 +527,13 @@ export const ChannelList = ({
             </div>
           </div>
           <div className="mt-1 space-y-0.5">
-            {voiceChannels.length === 0 ? <p className="px-2 py-1 text-xs text-paw-text-muted">{t("channels.empty")}</p> : null}
+            {voiceChannels.length === 0 ? <p className="typo-meta px-2 py-1">{t("channels.empty")}</p> : null}
             {voiceChannels.map((channel) => renderVoiceChannel(channel))}
           </div>
         </div>
       </div>
 
-      <footer className="border-t border-black/35 bg-[#232428] px-2 py-2">
+      <footer className="border-t border-black/35 bg-paw-bg-elevated px-2 py-2">
         {connectedVoiceChannelId ? (
           <div
             className={`mb-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2 ${
@@ -522,31 +541,31 @@ export const ChannelList = ({
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-[12px] font-semibold leading-4 text-[#8ee6a8]">{t("voice.connected")}</p>
+              <p className="typo-meta truncate font-semibold text-[#8ee6a8]">{t("voice.connected")}</p>
               <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase leading-3 tracking-wide ${
+                className={`rounded-full border px-2 py-0.5 typo-meta font-semibold uppercase tracking-wide ${
                   gatewayStatus === "connected"
                     ? "border-[#248046]/35 bg-[#248046]/25 text-[#8ee6a8]"
                     : gatewayStatus === "reconnecting" || gatewayStatus === "connecting"
                       ? "border-[#f4b942]/35 bg-[#f4b942]/20 text-[#ffd890]"
-                      : "border-white/15 bg-[#1e1f22] text-paw-text-muted"
+                      : "border-white/15 bg-[#0f1116] text-paw-text-muted"
                 }`}
               >
                 {gatewayStatusLabel}
               </span>
             </div>
-            <p className="mt-1 truncate text-xs text-paw-text-secondary">
+            <p className="typo-meta mt-1 truncate text-paw-text-secondary">
               #{connectedVoiceChannel?.name ?? t("voice.title")}
               {server?.name ? ` / ${server.name}` : ""}
             </p>
             <div className="mt-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] text-paw-text-muted">
+              <p className="typo-meta text-paw-text-muted">
                 Ping: {gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)} ms` : "-"}
               </p>
               <button
                 type="button"
                 onClick={onLeaveVoice}
-                className="rounded-md border border-white/15 bg-[#1e1f22] px-2 py-0.5 text-[11px] font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#2b2d31] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+                className="rounded-md border border-white/15 bg-[#0f1116] px-2 py-0.5 typo-meta font-semibold text-paw-text-secondary transition-colors hover:bg-[#171a20] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
               >
                 {t("voice.leave")}
               </button>
@@ -554,18 +573,18 @@ export const ChannelList = ({
           </div>
         ) : null}
 
-        <div className="rounded-lg border border-white/10 bg-[#1e1f22] p-2">
+        <div className="ui-profile-card p-2">
           <div className="flex items-center gap-2">
             <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "guest"} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-paw-text-secondary">{effectiveUser?.username ?? "guest"}</p>
-              <p className="truncate text-xs text-paw-text-muted">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
+              <p className="ui-profile-name typo-body truncate font-semibold">{effectiveUser?.username ?? "guest"}</p>
+              <p className="typo-meta truncate">{effectiveUser?.id?.slice(0, 8) ?? t("common.none")}</p>
             </div>
           </div>
 
           <div className="mt-2">
             <Link to="/app/settings" className="block w-full">
-              <Button className="w-full bg-[#2b2d31] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary shadow-none hover:bg-[#35373c]">
+              <Button variant="secondary" size="sm" className="ui-profile-card-btn w-full">
                 {t("home.settings")}
               </Button>
             </Link>
@@ -584,3 +603,4 @@ export const ChannelList = ({
     </section>
   );
 };
+

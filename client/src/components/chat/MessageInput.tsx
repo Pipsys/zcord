@@ -147,14 +147,14 @@ export const MessageInput = ({
   return (
     <div className="border-t border-black/35 bg-paw-bg-secondary px-3 pb-3 pt-2">
       {editingMessage ? (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-[#2b2d31] px-3 py-2">
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-[#171a20] px-3 py-2">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-paw-text-secondary">{t("message.editing_label")}</p>
-            <p className="truncate text-xs text-paw-text-muted">{editingMessage.preview}</p>
+            <p className="typo-meta font-semibold text-paw-text-secondary">{t("message.editing_label")}</p>
+            <p className="typo-meta truncate">{editingMessage.preview}</p>
           </div>
           <button
             type="button"
-            className="rounded-md bg-[#404249] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#4a4d55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+            className="rounded-md bg-[#22262e] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#282d36] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             onClick={onCancelEdit}
           >
             {t("message.cancel")}
@@ -163,16 +163,16 @@ export const MessageInput = ({
       ) : null}
 
       {!editingMessage && replyingTo ? (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-[#2b2d31] px-3 py-2">
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-[#171a20] px-3 py-2">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-paw-text-secondary">
+            <p className="typo-meta font-semibold text-paw-text-secondary">
               {t("message.replying_to")} {replyingTo.author}
             </p>
-            <p className="truncate text-xs text-paw-text-muted">{replyingTo.preview}</p>
+            <p className="typo-meta truncate">{replyingTo.preview}</p>
           </div>
           <button
             type="button"
-            className="rounded-md bg-[#404249] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#4a4d55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+            className="rounded-md bg-[#22262e] px-2 py-1 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[#282d36] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             onClick={onCancelReply}
           >
             {t("message.cancel")}
@@ -188,14 +188,14 @@ export const MessageInput = ({
             const progress = upload?.progress ?? 0;
             const statusLabel = upload ? uploadStatusLabels[upload.status] : null;
             return (
-              <div key={`${key}-${index}`} className="rounded-md border border-white/10 bg-[#1e1f22] px-2.5 py-2">
+              <div key={`${key}-${index}`} className="rounded-md border border-white/10 bg-[#0f1116] px-2.5 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-paw-text-secondary">{file.name}</p>
-                    <p className="text-[11px] text-paw-text-muted">{formatFileSize(file.size)}</p>
+                    <p className="typo-meta truncate font-medium text-paw-text-secondary">{file.name}</p>
+                    <p className="typo-meta">{formatFileSize(file.size)}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {statusLabel ? <span className="text-[11px] text-paw-text-muted">{statusLabel}</span> : null}
+                    {statusLabel ? <span className="typo-meta text-paw-text-muted">{statusLabel}</span> : null}
                     <button
                       type="button"
                       disabled={isSubmitting}
@@ -217,11 +217,11 @@ export const MessageInput = ({
         </div>
       ) : null}
 
-      <div className="mb-1 min-h-4 px-1 text-xs text-paw-text-muted">{typingText ?? ""}</div>
+      <div className="typo-meta mb-1 min-h-4 px-1 text-paw-text-muted">{typingText ?? ""}</div>
 
       <div
         className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 transition-colors ${
-          isDragging ? "border-paw-accent/50 bg-[#2b2d31]" : "border-white/10 bg-[#1e1f22]"
+          isDragging ? "border-paw-accent/50 bg-[#171a20]" : "border-white/10 bg-[#0f1116]"
         }`}
         onDragOver={(event) => {
           event.preventDefault();
@@ -254,7 +254,7 @@ export const MessageInput = ({
         />
 
         <button
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#2b2d31] text-lg leading-none text-paw-text-muted transition-colors hover:bg-[#35373c] hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#171a20] text-lg leading-none text-paw-text-muted transition-colors hover:bg-[#1f2229] hover:text-paw-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
           type="button"
           title={t("message.input_attach")}
           onClick={() => fileInputRef.current?.click()}
@@ -278,7 +278,7 @@ export const MessageInput = ({
             }
           }}
           placeholder={editingMessage ? t("message.editing_placeholder") : t("message.input_placeholder", { channel: channelName })}
-          className="h-9 min-w-0 flex-1 bg-transparent px-1 text-[15px] leading-5 text-paw-text-secondary placeholder:text-paw-text-muted focus:outline-none"
+          className="typo-message h-9 min-w-0 flex-1 bg-transparent px-1 text-paw-text-secondary placeholder:text-paw-text-muted focus:outline-none"
         />
 
         <EmojiPicker
@@ -296,8 +296,9 @@ export const MessageInput = ({
           {isSubmitting ? t("message.upload_status_uploading") : editingMessage ? t("message.edit_action_save") : t("message.input_send")}
         </Button>
 
-        <span className="hidden w-16 shrink-0 text-right text-xs tabular-nums text-paw-text-muted xl:block">{remaining}/4000</span>
+        <span className="typo-meta hidden w-16 shrink-0 text-right tabular-nums text-paw-text-muted xl:block">{remaining}/4000</span>
       </div>
     </div>
   );
 };
+

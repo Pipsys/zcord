@@ -24,12 +24,13 @@ async def _load_user_profiles(session: AsyncSession, relations: list[Friend]) ->
     if not user_ids:
         return {}
 
-    users = await session.execute(select(User.id, User.username, User.avatar_url).where(User.id.in_(user_ids)))
+    users = await session.execute(select(User.id, User.username, User.avatar_url, User.banner_url).where(User.id.in_(user_ids)))
     media_service = MediaService(session)
     return {
         row.id: {
             "username": row.username,
             "avatar_url": media_service.resolve_public_url(row.avatar_url),
+            "banner_url": media_service.resolve_public_url(row.banner_url),
         }
         for row in users.all()
     }
@@ -53,6 +54,8 @@ def _serialize_relation(
         addressee_username=addressee.get("username") if isinstance(addressee, dict) else None,
         requester_avatar_url=requester.get("avatar_url") if isinstance(requester, dict) else None,
         addressee_avatar_url=addressee.get("avatar_url") if isinstance(addressee, dict) else None,
+        requester_banner_url=requester.get("banner_url") if isinstance(requester, dict) else None,
+        addressee_banner_url=addressee.get("banner_url") if isinstance(addressee, dict) else None,
         peer_is_online=peer_presence.is_online,
         peer_was_recently_online=was_recently_online(peer_presence),
         peer_last_seen_at=peer_presence.last_seen_at,

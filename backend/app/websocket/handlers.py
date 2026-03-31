@@ -172,23 +172,32 @@ async def _validate_dm_channel_access(channel_id: str, user_id: str) -> tuple[Ch
         return channel, participants
 
 
-async def _load_voice_user_profile(user_id: str) -> tuple[str | None, str | None]:
+async def _load_user_public_profile(user_id: str) -> tuple[str | None, str | None, str | None]:
     try:
         user_uuid = UUID(user_id)
     except ValueError:
-        return None, None
+        return None, None, None
 
     async with AsyncSessionLocal() as session:
         row = (
             await session.execute(
-                select(User.username, User.avatar_url).where(User.id == user_uuid)
+                select(User.username, User.avatar_url, User.banner_url).where(User.id == user_uuid)
             )
         ).one_or_none()
         if row is None:
-            return None, None
+            return None, None, None
 
         media_service = MediaService(session)
-        return row.username, media_service.resolve_public_url(row.avatar_url)
+        return (
+            row.username,
+            media_service.resolve_public_url(row.avatar_url),
+            media_service.resolve_public_url(row.banner_url),
+        )
+
+
+async def _load_voice_user_profile(user_id: str) -> tuple[str | None, str | None]:
+    username, avatar_url, _ = await _load_user_public_profile(user_id)
+    return username, avatar_url
 
 
 def _coerce_bool(value: Any) -> bool | None:
@@ -338,6 +347,7 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
         if target_user_id == user_id:
             return
 
+        caller_name, caller_avatar_url, caller_banner_url = await _load_user_public_profile(user_id)
         payload = {
             "op": "DISPATCH",
             "t": GatewayEventType.DM_CALL_INVITE.value,
@@ -345,6 +355,9 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
                 "channel_id": channel_id,
                 "call_id": call_id,
                 "caller_id": user_id,
+                "caller_name": caller_name,
+                "caller_avatar_url": caller_avatar_url,
+                "caller_banner_url": caller_banner_url,
                 "target_user_id": target_user_id,
                 "created_at": datetime.now(UTC).isoformat(),
             },

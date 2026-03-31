@@ -22,7 +22,7 @@ export const LanguageSwitcher = ({ compact = false }: LanguageSwitcherProps) => 
           onClick={() => setLocale(option)}
           className={clsx(
             "rounded px-2.5 py-1 text-[12px] font-semibold leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35",
-            locale === option ? "bg-[#404249] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#2b2d31] hover:text-paw-text-secondary",
+            locale === option ? "bg-[#22262e] text-paw-text-primary" : "text-paw-text-muted hover:bg-[#171a20] hover:text-paw-text-secondary",
           )}
         >
           {option.toUpperCase()}
@@ -31,3 +31,4 @@ export const LanguageSwitcher = ({ compact = false }: LanguageSwitcherProps) => 
     </div>
   );
 };
+

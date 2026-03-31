@@ -15,7 +15,7 @@ const serverItemBase =
   "relative grid h-[52px] w-[52px] shrink-0 place-items-center overflow-hidden rounded-2xl text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
 
 const VoiceTooltipIcon = () => (
-  <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" aria-hidden>
+  <svg className="h-[var(--icon-size-md)] w-[var(--icon-size-md)]" viewBox="0 0 24 24" fill="none" aria-hidden>
     <path d="M5 8V16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     <path d="M9 6V18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     <path d="M13 4V20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -67,7 +67,7 @@ export const Sidebar = () => {
   }, [participantsByChannel]);
 
   return (
-    <aside className="flex h-full w-[72px] flex-col items-center gap-2 border-r border-black/35 bg-paw-bg-tertiary py-3">
+    <aside className="flex h-full w-[var(--layout-sidebar-width)] flex-col items-center gap-2 border-r border-black/35 bg-paw-bg-tertiary py-3">
       <Tooltip label="Home" side="right">
         <Link to="/app/home" onClick={() => setActiveServer(null)}>
           <motion.div
@@ -93,9 +93,9 @@ export const Sidebar = () => {
           const previewVoiceMembers = serverVoiceMembers.slice(0, 4);
           const hiddenVoiceMembersCount = Math.max(0, serverVoiceMembers.length - previewVoiceMembers.length);
           const tooltipContent = (
-            <div className="w-[150px]">
-              <div className="truncate text-[12px] font-semibold leading-4 text-paw-text-primary">{server.name}</div>
-              {serverVoiceMembers.length > 0 ? (
+              <div className="w-[150px]">
+                <div className="typo-meta truncate font-semibold text-paw-text-primary">{server.name}</div>
+                {serverVoiceMembers.length > 0 ? (
                 <>
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="grid h-6 w-6 place-items-center rounded-md border border-white/15 bg-white/10 text-paw-text-secondary">
@@ -107,7 +107,7 @@ export const Sidebar = () => {
                         return (
                           <span
                             key={participant.user_id}
-                            className="inline-flex h-6 w-6 overflow-hidden rounded-full border border-[#111318] bg-[#2b2d31]"
+                            className="inline-flex h-6 w-6 overflow-hidden rounded-full border border-[#111318] bg-[#171a20]"
                             title={name}
                           >
                             {participant.avatar_url ? (
@@ -121,7 +121,7 @@ export const Sidebar = () => {
                         );
                       })}
                       {hiddenVoiceMembersCount > 0 ? (
-                        <span className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-white/15 bg-[#2b2d31] px-1 text-[10px] font-semibold leading-4 text-paw-text-secondary">
+                        <span className="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-white/15 bg-[#171a20] px-1 text-[10px] font-semibold leading-4 text-paw-text-secondary">
                           +{hiddenVoiceMembersCount}
                         </span>
                       ) : null}
@@ -129,7 +129,7 @@ export const Sidebar = () => {
                   </div>
                 </>
               ) : (
-                <div className="mt-1.5 text-[11px] leading-4 text-paw-text-muted">{t("sidebar.voice_empty")}</div>
+                <div className="typo-meta mt-1.5 text-paw-text-muted">{t("sidebar.voice_empty")}</div>
               )}
             </div>
           );
@@ -160,3 +160,4 @@ export const Sidebar = () => {
     </aside>
   );
 };
+

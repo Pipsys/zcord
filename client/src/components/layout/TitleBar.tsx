@@ -71,14 +71,14 @@ export const TitleBar = () => {
     <header
       className={clsx(
         "drag-region relative flex items-center justify-between border-b border-black/35",
-        isMac ? "h-12 bg-paw-bg-secondary px-4" : "h-10 bg-paw-bg-secondary px-3",
+        "h-[var(--layout-titlebar-height)] bg-paw-bg-secondary px-3",
       )}
     >
       <div className={clsx("min-w-0 flex items-center", isMac ? "gap-3 pl-[76px]" : "gap-2")}>
         <img src={zcordLogo} alt="zcord" className="h-4 w-4 rounded object-contain" />
-        <span className={clsx("font-semibold uppercase leading-4 text-paw-text-muted", isMac ? "text-[12px] tracking-[0.14em]" : "text-[12px] tracking-[0.08em]")}>zcord</span>
-        <span className="text-xs text-paw-text-muted">/</span>
-        <span className={clsx("truncate font-semibold leading-5 text-paw-text-secondary", isMac ? "text-[14px]" : "text-[15px]")}>{sectionTitle}</span>
+        <span className={clsx("typo-meta font-semibold uppercase leading-4", isMac ? "tracking-[0.14em]" : "tracking-[0.08em]")}>zcord</span>
+        <span className="typo-meta">/</span>
+        <span className="typo-title-md truncate">{sectionTitle}</span>
       </div>
 
       <div className={clsx("no-drag-region flex items-center", isMac ? "gap-2" : "gap-1")}>

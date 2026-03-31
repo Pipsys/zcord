@@ -697,6 +697,50 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
+  "api:upload-user-banner",
+  async (
+    _event,
+    payload: { file: { name: string; type: string; data: ArrayBuffer; size: number; lastModified: number } },
+  ) => {
+    let token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+    const endpoint = getApiEndpoint();
+    const executeUpload = async (accessToken: string | null) => {
+      const formData = new FormData();
+      const binary = toArrayBuffer(payload.file.data);
+      const blob = new Blob([binary], { type: payload.file.type || "application/octet-stream" });
+      formData.append("file", blob, payload.file.name);
+      return fetch(`${endpoint}/users/me/banner`, {
+        method: "POST",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        body: formData,
+      });
+    };
+
+    let response = await executeUpload(token);
+    let data = await parseJsonResponse(response);
+
+    if (response.status === 401) {
+      const refreshed = await tryRefreshAccessToken(endpoint);
+      if (refreshed) {
+        token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+        response = await executeUpload(token);
+        data = await parseJsonResponse(response);
+      }
+    }
+
+    if (response.ok) {
+      await persistTokensFromPayload(data);
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+    };
+  },
+);
+
+ipcMain.handle(
   "api:upload-server-icon",
   async (
     _event,

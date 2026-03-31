@@ -104,6 +104,22 @@ async def upload_my_avatar(
         media_service.delete_object(old_avatar_key)
     return _serialize_user(current_user, media_service)
 
+@router.post("/me/banner", response_model=UserRead)
+async def upload_my_banner(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    media_service = MediaService(session)
+    old_banner_key = current_user.banner_url
+    object_key = await media_service.upload_user_banner(current_user.id, file)
+    current_user.banner_url = object_key
+    await session.commit()
+    await session.refresh(current_user)
+    if old_banner_key and old_banner_key != object_key:
+        media_service.delete_object(old_banner_key)
+    return _serialize_user(current_user, media_service)
+
 
 @router.get("/{user_id}", response_model=UserRead)
 async def get_user(user_id: UUID, session: AsyncSession = Depends(get_session), _: User = Depends(get_current_user)):

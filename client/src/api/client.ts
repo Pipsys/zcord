@@ -139,6 +139,23 @@ export const uploadAvatar = async <T>(file: File): Promise<T> => {
   return response.data;
 };
 
+export const uploadUserBanner = async <T>(file: File): Promise<T> => {
+  const payload: ProfileUploadFilePayload = {
+    name: file.name,
+    type: file.type,
+    data: await file.arrayBuffer(),
+    size: file.size,
+    lastModified: file.lastModified,
+  };
+
+  const response = await window.pawcord.uploadUserBanner<T>({ file: payload });
+  await syncTokenFromBridge();
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(response));
+  }
+  return response.data;
+};
+
 export const uploadServerIcon = async <T>(serverId: string, file: File): Promise<T> => {
   const payload: ProfileUploadFilePayload = {
     name: file.name,

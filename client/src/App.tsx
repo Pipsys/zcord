@@ -96,7 +96,7 @@ const AppShell = () => {
     <ProtectedRoute>
       <div className="flex h-full flex-col">
         <TitleBar />
-        <div className="min-h-0 flex flex-1 overflow-hidden">
+        <div className="ui-shell-main">
           <Sidebar />
           <main className="relative min-h-0 flex-1 overflow-hidden">
             <div className="absolute inset-0">
@@ -173,7 +173,7 @@ const App = () => {
   );
 
   return (
-    <div className="h-screen overflow-hidden bg-paw-bg-primary text-paw-text-primary">
+    <div className="ui-app-frame">
       <RealtimeProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
