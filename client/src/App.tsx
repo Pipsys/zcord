@@ -99,11 +99,8 @@ const AppShell = () => {
         <div className="min-h-0 flex flex-1 overflow-hidden">
           <Sidebar />
           <main className="relative min-h-0 flex-1 overflow-hidden">
-            <div
-              className={isHomeRoute ? "h-full" : "absolute -left-[12000px] top-0 h-px w-px overflow-hidden opacity-0"}
-              aria-hidden={!isHomeRoute}
-            >
-              <HomePage />
+            <div className="absolute inset-0">
+              <HomePage isRouteActive={isHomeRoute} />
             </div>
 
             {!isHomeRoute ? (

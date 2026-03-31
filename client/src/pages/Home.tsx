@@ -211,7 +211,11 @@ const readStoredChannelListWidth = (): number => {
   return clampChannelListWidth(parsed);
 };
 
-const HomePage = () => {
+interface HomePageProps {
+  isRouteActive?: boolean;
+}
+
+const HomePage = ({ isRouteActive = true }: HomePageProps) => {
   const { t } = useI18n();
   const navigate = useNavigate();
   const { socket, voiceRoom, gatewayStatus, gatewayLatencyMs } = useRealtime();
@@ -397,6 +401,24 @@ const HomePage = () => {
     const timerId = window.setInterval(tick, 1000);
     return () => window.clearInterval(timerId);
   }, [activeDmCall?.callId, activeDmCall?.stage]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!activeDmCallRef.current || isDmCallOverlayOpen) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      const isReturnHotkey = (event.ctrlKey || event.metaKey) && event.shiftKey && key === "r";
+      if (!isReturnHotkey) {
+        return;
+      }
+      event.preventDefault();
+      setIsDmCallOverlayOpen(true);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isDmCallOverlayOpen]);
 
   const sendRealtimeEvent = useCallback(
     (type: string, data: Record<string, unknown>): boolean => {
@@ -1654,7 +1676,9 @@ const HomePage = () => {
   };
 
   return (
-    <div className="flex h-full overflow-hidden bg-paw-bg-primary">
+    <>
+      {isRouteActive ? (
+        <div className="flex h-full overflow-hidden bg-paw-bg-primary">
       <aside className="relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary p-2" style={{ width: `${panelWidth}px` }}>
         <div className="mb-2 space-y-1 px-1">
           <button
@@ -1835,42 +1859,36 @@ const HomePage = () => {
           </header>
 
           {activeDmCall && activeDmCall.channelId === selectedDm.channelId && !isDmCallOverlayOpen ? (
-            <div className="flex items-center justify-between gap-3 border-b border-black/30 bg-[#1e1f22] px-4 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-paw-text-secondary">
-                  {activeDmCall.peerName}
-                </p>
-                <p className="truncate text-xs text-paw-text-muted">{activeDmCallStageLabel}</p>
+            <div className="flex items-center justify-between gap-3 border-b border-black/30 bg-[#1f232d]/95 px-4 py-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#3ba55d]/20 text-[#3ba55d]">
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M6.9 3.5h3.6c.6 0 1.1.4 1.3 1l1 3.3c.2.7-.1 1.4-.7 1.7l-1.6.8c1 2 2.6 3.6 4.6 4.6l.8-1.6c.3-.6 1-.9 1.7-.7l3.3 1c.6.2 1 .7 1 1.3v3.6c0 .8-.6 1.4-1.4 1.5h-1.1C10.1 21 3 13.9 2 5.1V3.9C2 3.1 2.6 2.5 3.4 2.5h3.5Z"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-paw-text-secondary">{activeDmCall.peerName}</p>
+                  <p className="truncate text-xs text-paw-text-muted">
+                    {activeDmCall.stage === "connected"
+                      ? `${t("dm.call_connected")} • ${formatCallDuration(dmCallElapsedSec)}`
+                      : activeDmCallStageLabel}
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsDmCallOverlayOpen(true)}
-                  className="inline-flex h-8 items-center rounded-md bg-[#2b2d31] px-2 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
+                  className="inline-flex h-8 items-center rounded-md bg-[#2b2d31] px-3 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
+                  title="Ctrl+Shift+R"
                 >
-                  {t("dm.call_overlay_open")}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleDirectCallMute}
-                  className={`inline-flex h-8 items-center rounded-md px-2 text-xs font-semibold transition-colors ${
-                    callMuted
-                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
-                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
-                  }`}
-                >
-                  {callMuted ? t("dm.call_unmute") : t("dm.call_mute")}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleDirectCallDeafen}
-                  className={`inline-flex h-8 items-center rounded-md px-2 text-xs font-semibold transition-colors ${
-                    callDeafened
-                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
-                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
-                  }`}
-                >
-                  {callDeafened ? t("dm.call_undeafen") : t("dm.call_deafen")}
+                  {t("dm.call_return")}
                 </button>
                 <button
                   type="button"
@@ -2114,6 +2132,8 @@ const HomePage = () => {
           </div>
         </section>
       )}
+        </div>
+      ) : null}
 
       {activeDmCall && isDmCallOverlayOpen ? (
         <div className="fixed inset-0 z-[360]">
@@ -2198,8 +2218,9 @@ const HomePage = () => {
               type="button"
               onClick={() => setIsDmCallOverlayOpen(true)}
               className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-white/15 bg-[#2b2d31] px-2 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
+              title="Ctrl+Shift+R"
             >
-              {t("dm.call_overlay_open")}
+              {t("dm.call_return")}
             </button>
             <button
               type="button"
@@ -2215,7 +2236,7 @@ const HomePage = () => {
       <audio ref={remoteCallAudioRef} autoPlay playsInline hidden />
 
       {incomingCallInvite ? (
-        <div className="pointer-events-none fixed inset-0 z-[370] flex items-end justify-end p-5 md:items-center md:justify-center">
+        <div className="pointer-events-none fixed bottom-5 left-5 z-[370] sm:left-[92px]">
           <div className="pointer-events-auto w-[290px] rounded-2xl border border-white/12 bg-[#111319]/95 p-5 shadow-[0_26px_70px_rgba(0,0,0,0.58)] backdrop-blur-lg">
             <div className="mb-5 flex flex-col items-center text-center">
               <Avatar src={incomingCallInvite.callerAvatar} label={incomingCallInvite.callerName} size="xl" />
@@ -2264,7 +2285,7 @@ const HomePage = () => {
         onCancel={() => setPendingDeleteMessage(null)}
         onConfirm={() => void confirmDeleteMessage()}
       />
-    </div>
+    </>
   );
 };
 
