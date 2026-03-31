@@ -132,6 +132,7 @@ coverage/
 *.pid.lock
 tmp/
 temp/
+nginx.conf
 
 # =========================
 # Local repository mirrors / backups
