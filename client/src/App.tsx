@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Suspense, lazy, useEffect, useRef } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
+import { useDirectChannelsQuery } from "@/api/queries";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { AppLoader } from "@/components/ui/AppLoader";
@@ -10,7 +11,7 @@ import HomePage from "@/pages/Home";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import ServerPage from "@/pages/Server";
-import { RealtimeProvider } from "@/realtime/RealtimeProvider";
+import { RealtimeProvider, useRealtime } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
 import { useUiStore } from "@/store/uiStore";
 
@@ -26,6 +27,10 @@ const contentTransition = {
   duration: 0.16,
   ease: [0.2, 0, 0, 1],
 } as const;
+
+const PENDING_DM_CALL_INVITE_STORAGE_KEY = "zcord.pending-dm-call-invite";
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 const resolveAppContentKey = (pathname: string): string => {
   if (pathname.startsWith("/app/server/")) {
@@ -59,7 +64,95 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 const AppShell = () => {
   const { t } = useI18n();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { socket } = useRealtime();
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
+  const pushToast = useUiStore((state) => state.pushToast);
+  const { data: directChannels } = useDirectChannelsQuery();
   const contentKey = `${resolveAppContentKey(location.pathname)}${location.search}`;
+  const dmChannelIds = (directChannels ?? [])
+    .filter((channel) => channel.type === "dm" || channel.type === "group_dm")
+    .map((channel) => channel.id);
+
+  useEffect(() => {
+    if (!socket || dmChannelIds.length === 0) {
+      return;
+    }
+
+    const subscribeAllDmChannels = () => {
+      for (const channelId of dmChannelIds) {
+        socket.send(
+          JSON.stringify({
+            t: "SUBSCRIBE_SERVER",
+            d: { channel_id: channelId },
+          }),
+        );
+      }
+    };
+
+    if (socket.readyState === WebSocket.OPEN) {
+      subscribeAllDmChannels();
+      return;
+    }
+
+    socket.addEventListener("open", subscribeAllDmChannels, { once: true });
+    return () => socket.removeEventListener("open", subscribeAllDmChannels);
+  }, [dmChannelIds, socket]);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const onMessage = (event: MessageEvent<string>) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!isRecord(parsed) || parsed.t !== "DM_CALL_INVITE" || !isRecord(parsed.d)) {
+        return;
+      }
+
+      const callId = parsed.d.call_id;
+      const channelId = parsed.d.channel_id;
+      const callerId = parsed.d.caller_id;
+      const targetUserId = parsed.d.target_user_id;
+      if (typeof callId !== "string" || typeof channelId !== "string" || typeof callerId !== "string") {
+        return;
+      }
+      if (callerId === currentUserId) {
+        return;
+      }
+      if (typeof targetUserId === "string" && targetUserId !== currentUserId) {
+        return;
+      }
+      if (location.pathname.startsWith("/app/home")) {
+        return;
+      }
+
+      try {
+        window.sessionStorage.setItem(
+          PENDING_DM_CALL_INVITE_STORAGE_KEY,
+          JSON.stringify({
+            call_id: callId,
+            channel_id: channelId,
+            caller_id: callerId,
+            target_user_id: typeof targetUserId === "string" ? targetUserId : null,
+          }),
+        );
+      } catch {
+        // Ignore storage errors.
+      }
+
+      pushToast(t("dm.call_incoming"), callerId.slice(0, 8));
+      navigate("/app/home");
+    };
+
+    socket.addEventListener("message", onMessage as EventListener);
+    return () => socket.removeEventListener("message", onMessage as EventListener);
+  }, [currentUserId, location.pathname, navigate, pushToast, socket, t]);
 
   return (
     <ProtectedRoute>

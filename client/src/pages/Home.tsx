@@ -63,6 +63,7 @@ const DM_CALL_RING_OUTGOING_PATH = "sounds/dm-call-outgoing.wav";
 const DM_CALL_ACCEPT_PATH = "sounds/dm-call-accept.wav";
 const DM_CALL_DECLINE_PATH = "sounds/dm-call-decline.wav";
 const DM_CALL_END_PATH = "sounds/dm-call-end.wav";
+const PENDING_DM_CALL_INVITE_STORAGE_KEY = "zcord.pending-dm-call-invite";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
@@ -77,6 +78,17 @@ const resolveDmCallSoundUrl = (raw: string): string => {
     return new URL(raw, window.location.href).toString();
   } catch {
     return raw;
+  }
+};
+
+const clearPendingDmCallInviteStorage = (): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.removeItem(PENDING_DM_CALL_INVITE_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors.
   }
 };
 
@@ -462,6 +474,64 @@ const HomePage = () => {
     [getLoopSound],
   );
 
+  useEffect(() => {
+    if (incomingCallInviteRef.current || activeDmCallRef.current) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let raw: string | null = null;
+    try {
+      raw = window.sessionStorage.getItem(PENDING_DM_CALL_INVITE_STORAGE_KEY);
+    } catch {
+      return;
+    }
+
+    if (!raw) {
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      clearPendingDmCallInviteStorage();
+      return;
+    }
+    if (!isRecord(parsed)) {
+      clearPendingDmCallInviteStorage();
+      return;
+    }
+
+    const callId = parsed.call_id;
+    const channelId = parsed.channel_id;
+    const callerId = parsed.caller_id;
+    const targetUserId = parsed.target_user_id;
+    if (typeof callId !== "string" || typeof channelId !== "string" || typeof callerId !== "string") {
+      clearPendingDmCallInviteStorage();
+      return;
+    }
+    if (typeof targetUserId === "string" && currentUserId && targetUserId !== currentUserId) {
+      clearPendingDmCallInviteStorage();
+      return;
+    }
+
+    const peerMeta = resolvePeerMeta(callerId);
+    const invite: IncomingDmCallInvite = {
+      callId,
+      channelId,
+      callerId,
+      callerName: peerMeta.name,
+      callerAvatar: peerMeta.avatar,
+    };
+    setIncomingCallInvite(invite);
+    incomingCallInviteRef.current = invite;
+    startCallLoopingSound("incoming");
+    clearPendingDmCallInviteStorage();
+  }, [currentUserId, resolvePeerMeta, startCallLoopingSound]);
+
   const getOneShotCallSound = useCallback((kind: "accept" | "decline" | "end"): HTMLAudioElement => {
     const existing = callOneShotAudioRef.current[kind];
     if (existing) {
@@ -559,6 +629,7 @@ const HomePage = () => {
       setCallDeafened(false);
       setIncomingCallInvite(null);
       incomingCallInviteRef.current = null;
+      clearPendingDmCallInviteStorage();
       setActiveDmCall(null);
       activeDmCallRef.current = null;
 
@@ -805,6 +876,7 @@ const HomePage = () => {
     });
     setIncomingCallInvite(null);
     incomingCallInviteRef.current = null;
+    clearPendingDmCallInviteStorage();
   }, [playOneShotCallSound, sendRealtimeEvent, stopCallLoopingSounds]);
 
   const acceptIncomingCall = useCallback(async () => {
@@ -817,6 +889,7 @@ const HomePage = () => {
     playOneShotCallSound("accept");
     setIncomingCallInvite(null);
     incomingCallInviteRef.current = null;
+    clearPendingDmCallInviteStorage();
     setSelectedDm({
       channelId: invite.channelId,
       peerId: invite.callerId,
