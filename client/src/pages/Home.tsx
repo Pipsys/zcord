@@ -2215,29 +2215,39 @@ const HomePage = () => {
       <audio ref={remoteCallAudioRef} autoPlay playsInline hidden />
 
       {incomingCallInvite ? (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-50">
-          <div className="pointer-events-auto w-72 rounded-xl border border-white/10 bg-[#1f2127] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
-            <div className="mb-3 flex items-center gap-3">
-              <Avatar src={incomingCallInvite.callerAvatar} label={incomingCallInvite.callerName} size="md" />
-              <div className="min-w-0">
-                <p className="truncate text-base font-semibold text-paw-text-secondary">{incomingCallInvite.callerName}</p>
-                <p className="truncate text-xs text-paw-text-muted">{t("dm.call_incoming")}</p>
-              </div>
+        <div className="pointer-events-none fixed inset-0 z-[370] flex items-end justify-end p-5 md:items-center md:justify-center">
+          <div className="pointer-events-auto w-[290px] rounded-2xl border border-white/12 bg-[#111319]/95 p-5 shadow-[0_26px_70px_rgba(0,0,0,0.58)] backdrop-blur-lg">
+            <div className="mb-5 flex flex-col items-center text-center">
+              <Avatar src={incomingCallInvite.callerAvatar} label={incomingCallInvite.callerName} size="xl" />
+              <p className="mt-3 max-w-full truncate text-xl font-semibold tracking-tight text-paw-text-primary">{incomingCallInvite.callerName}</p>
+              <p className="mt-1 text-sm text-paw-text-muted">{t("dm.call_incoming")}</p>
             </div>
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex items-center justify-center gap-4">
               <button
                 type="button"
                 onClick={declineIncomingCall}
-                className="inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-[#ed4245] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#c93a3e]"
+                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#ed4245] text-white transition-colors hover:bg-[#c93a3e]"
+                aria-label={t("dm.call_decline")}
               >
-                {t("dm.call_decline")}
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                </svg>
               </button>
               <button
                 type="button"
                 onClick={() => void acceptIncomingCall()}
-                className="inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-[#3ba55d] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#2f8a4e]"
+                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#3ba55d] text-white transition-colors hover:bg-[#2f8a4e]"
+                aria-label={t("dm.call_accept")}
               >
-                {t("dm.call_accept")}
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M6.9 3.5h3.6c.6 0 1.1.4 1.3 1l1 3.3c.2.7-.1 1.4-.7 1.7l-1.6.8c1 2 2.6 3.6 4.6 4.6l.8-1.6c.3-.6 1-.9 1.7-.7l3.3 1c.6.2 1 .7 1 1.3v3.6c0 .8-.6 1.4-1.4 1.5h-1.1C10.1 21 3 13.9 2 5.1V3.9C2 3.1 2.6 2.5 3.4 2.5h3.5Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
             </div>
           </div>

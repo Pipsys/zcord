@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Suspense, lazy, useEffect, useRef } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { useDirectChannelsQuery } from "@/api/queries";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -27,10 +27,6 @@ const contentTransition = {
   duration: 0.16,
   ease: [0.2, 0, 0, 1],
 } as const;
-
-const PENDING_DM_CALL_INVITE_STORAGE_KEY = "zcord.pending-dm-call-invite";
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 const resolveAppContentKey = (pathname: string): string => {
   if (pathname.startsWith("/app/server/")) {
@@ -62,13 +58,10 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 };
 
 const AppShell = () => {
-  const { t } = useI18n();
   const location = useLocation();
-  const navigate = useNavigate();
   const { socket } = useRealtime();
-  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
-  const pushToast = useUiStore((state) => state.pushToast);
   const { data: directChannels } = useDirectChannelsQuery();
+  const isHomeRoute = location.pathname.startsWith("/app/home");
   const contentKey = `${resolveAppContentKey(location.pathname)}${location.search}`;
   const dmChannelIds = (directChannels ?? [])
     .filter((channel) => channel.type === "dm" || channel.type === "group_dm")
@@ -99,81 +92,35 @@ const AppShell = () => {
     return () => socket.removeEventListener("open", subscribeAllDmChannels);
   }, [dmChannelIds, socket]);
 
-  useEffect(() => {
-    if (!socket) {
-      return;
-    }
-
-    const onMessage = (event: MessageEvent<string>) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-      if (!isRecord(parsed) || parsed.t !== "DM_CALL_INVITE" || !isRecord(parsed.d)) {
-        return;
-      }
-
-      const callId = parsed.d.call_id;
-      const channelId = parsed.d.channel_id;
-      const callerId = parsed.d.caller_id;
-      const targetUserId = parsed.d.target_user_id;
-      if (typeof callId !== "string" || typeof channelId !== "string" || typeof callerId !== "string") {
-        return;
-      }
-      if (callerId === currentUserId) {
-        return;
-      }
-      if (typeof targetUserId === "string" && targetUserId !== currentUserId) {
-        return;
-      }
-      if (location.pathname.startsWith("/app/home")) {
-        return;
-      }
-
-      try {
-        window.sessionStorage.setItem(
-          PENDING_DM_CALL_INVITE_STORAGE_KEY,
-          JSON.stringify({
-            call_id: callId,
-            channel_id: channelId,
-            caller_id: callerId,
-            target_user_id: typeof targetUserId === "string" ? targetUserId : null,
-          }),
-        );
-      } catch {
-        // Ignore storage errors.
-      }
-
-      pushToast(t("dm.call_incoming"), callerId.slice(0, 8));
-      navigate("/app/home");
-    };
-
-    socket.addEventListener("message", onMessage as EventListener);
-    return () => socket.removeEventListener("message", onMessage as EventListener);
-  }, [currentUserId, location.pathname, navigate, pushToast, socket, t]);
-
   return (
     <ProtectedRoute>
       <div className="flex h-full flex-col">
         <TitleBar />
         <div className="min-h-0 flex flex-1 overflow-hidden">
           <Sidebar />
-          <main className="min-h-0 flex-1 overflow-hidden">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={contentKey}
-                variants={contentVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={contentTransition}
-                className="h-full"
-              >
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
+          <main className="relative min-h-0 flex-1 overflow-hidden">
+            <div
+              className={isHomeRoute ? "h-full" : "absolute -left-[12000px] top-0 h-px w-px overflow-hidden opacity-0"}
+              aria-hidden={!isHomeRoute}
+            >
+              <HomePage />
+            </div>
+
+            {!isHomeRoute ? (
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={contentKey}
+                  variants={contentVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={contentTransition}
+                  className="h-full"
+                >
+                  <Outlet />
+                </motion.div>
+              </AnimatePresence>
+            ) : null}
           </main>
         </div>
       </div>
@@ -235,7 +182,7 @@ const App = () => {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/app" element={<AppShell />}>
-            <Route path="home" element={<HomePage />} />
+            <Route path="home" element={<div className="hidden" />} />
             <Route path="server/:serverId" element={<ServerPage />} />
             <Route
               path="settings"
