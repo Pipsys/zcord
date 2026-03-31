@@ -7,7 +7,11 @@ files:
 asar: true
 directories:
   output: release
-publish: null
+publish:
+  provider: github
+  owner: Pipsys
+  repo: Pawcord
+  releaseType: release
 win:
   icon: icon.ico
   target:

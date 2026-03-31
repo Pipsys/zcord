@@ -40,6 +40,32 @@ interface ScreenShareSource {
   appIconDataUrl: string | null;
 }
 
+type UpdaterStatus =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "not-available"
+  | "downloading"
+  | "downloaded"
+  | "installing"
+  | "error";
+
+interface UpdaterState {
+  enabled: boolean;
+  status: UpdaterStatus;
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseName: string | null;
+  releaseDate: string | null;
+  releaseNotes: string | null;
+  checkedAt: string | null;
+  progressPercent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  message: string | null;
+}
+
 interface PawcordBridge {
   system: {
     platform: string;
@@ -69,6 +95,13 @@ interface PawcordBridge {
   uploadServerBanner: <T>(payload: { serverId: string; file: AttachmentUploadFilePayload }) => Promise<{ ok: boolean; status: number; data: T }>;
   uploadAttachments: <T>(payload: { uploadId: string; messageId: string; files: AttachmentUploadFilePayload[] }) => Promise<{ ok: boolean; status: number; data: T }>;
   onUploadProgress: (handler: (payload: AttachmentUploadProgressPayload) => void) => () => void;
+  updater: {
+    getState: () => Promise<UpdaterState>;
+    checkForUpdates: () => Promise<UpdaterState>;
+    downloadUpdate: () => Promise<UpdaterState>;
+    installUpdate: () => Promise<UpdaterState>;
+    onStateChange: (handler: (payload: UpdaterState) => void) => () => void;
+  };
   notify: (title: string, body: string) => Promise<boolean>;
 }
 

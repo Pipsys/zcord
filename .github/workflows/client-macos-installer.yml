@@ -50,6 +50,7 @@ jobs:
           path: |
             client/release-win-x64/*.exe
             client/release-win-x64/*.blockmap
+            client/release-win-x64/latest*.yml
           if-no-files-found: error
 
   build-macos:
@@ -98,6 +99,7 @@ jobs:
             client/release-macos-${{ matrix.arch }}/*.dmg
             client/release-macos-${{ matrix.arch }}/*.zip
             client/release-macos-${{ matrix.arch }}/*.blockmap
+            client/release-macos-${{ matrix.arch }}/latest*.yml
           if-no-files-found: error
 
   publish-release-assets:
@@ -134,4 +136,5 @@ jobs:
             release-assets/*.dmg
             release-assets/*.zip
             release-assets/*.blockmap
+            release-assets/latest*.yml
           fail_on_unmatched_files: true

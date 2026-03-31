@@ -17,6 +17,31 @@ const ALLOWED_AVATAR_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif
 const ALLOWED_USER_BANNER_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif"]);
 const settingsSectionClass = "ui-surface px-5 py-4";
 
+const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const scaled = bytes / 1024 ** exponent;
+  const decimals = exponent === 0 ? 0 : scaled >= 10 ? 1 : 2;
+  return `${scaled.toFixed(decimals)} ${units[exponent]}`;
+};
+
+const formatReleaseDate = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toLocaleString();
+};
+
 const SettingsPage = () => {
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
@@ -35,11 +60,103 @@ const SettingsPage = () => {
   const [notifications, setNotifications] = useState(true);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const [updaterState, setUpdaterState] = useState<UpdaterState | null>(null);
 
   useEffect(() => {
     setDisplayName(user?.username ?? "");
     setEmail(user?.email ?? "");
   }, [user?.email, user?.username]);
+
+  useEffect(() => {
+    let active = true;
+
+    const hydrateUpdater = async () => {
+      try {
+        const next = await window.pawcord.updater.getState();
+        if (active) {
+          setUpdaterState(next);
+        }
+      } catch (error) {
+        if (active) {
+          pushToast(t("settings.updates_check_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
+        }
+      }
+    };
+
+    void hydrateUpdater();
+    const unsubscribe = window.pawcord.updater.onStateChange((next) => {
+      if (active) {
+        setUpdaterState(next);
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [pushToast, t]);
+
+  const handleCheckUpdates = async () => {
+    try {
+      const next = await window.pawcord.updater.checkForUpdates();
+      setUpdaterState(next);
+    } catch (error) {
+      pushToast(t("settings.updates_check_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    try {
+      const next = await window.pawcord.updater.downloadUpdate();
+      setUpdaterState(next);
+    } catch (error) {
+      pushToast(t("settings.updates_download_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    try {
+      const next = await window.pawcord.updater.installUpdate();
+      setUpdaterState(next);
+    } catch (error) {
+      pushToast(t("settings.updates_install_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
+    }
+  };
+
+  const updaterStatusLabel = (() => {
+    if (!updaterState) {
+      return t("common.loading");
+    }
+
+    switch (updaterState.status) {
+      case "disabled":
+        return t("settings.updates_status_disabled");
+      case "idle":
+        return t("settings.updates_status_idle");
+      case "checking":
+        return t("settings.updates_status_checking");
+      case "available":
+        return t("settings.updates_status_available");
+      case "not-available":
+        return t("settings.updates_status_not_available");
+      case "downloading":
+        return t("settings.updates_status_downloading");
+      case "downloaded":
+        return t("settings.updates_status_downloaded");
+      case "installing":
+        return t("settings.updates_status_installing");
+      case "error":
+        return t("settings.updates_status_error");
+      default:
+        return t("common.unknown_error");
+    }
+  })();
+
+  const isUpdaterBusy = updaterState?.status === "checking" || updaterState?.status === "downloading" || updaterState?.status === "installing";
+  const canCheckUpdates = Boolean(updaterState?.enabled && !isUpdaterBusy);
+  const canDownloadUpdate = updaterState?.status === "available";
+  const canInstallUpdate = updaterState?.status === "downloaded";
+  const releaseDateLabel = formatReleaseDate(updaterState?.releaseDate ?? null);
 
   const handlePickAvatar = async (file: File | null) => {
     if (!file) {
@@ -293,6 +410,76 @@ const SettingsPage = () => {
             />
             {t("settings.notifications_toggle")}
           </label>
+        </section>
+
+        <section className={settingsSectionClass}>
+          <h2 className="typo-title-md mb-2 text-paw-text-primary">{t("settings.updates")}</h2>
+          <p className="typo-meta mb-4">{t("settings.updates_description")}</p>
+
+          <div className="rounded-xl border border-white/10 bg-[#0f1116] p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <p className="typo-body truncate font-semibold text-paw-text-secondary">
+                  {t("settings.updates_current_version", { version: updaterState?.currentVersion ?? "..." })}
+                </p>
+                <p className="typo-meta">{updaterStatusLabel}</p>
+                {updaterState?.latestVersion && (
+                  <p className="typo-meta mt-1">
+                    {t("settings.updates_latest_version", { version: updaterState.latestVersion })}
+                    {releaseDateLabel ? ` · ${releaseDateLabel}` : ""}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!canCheckUpdates}
+                  onClick={() => void handleCheckUpdates()}
+                >
+                  {updaterState?.status === "checking" ? t("settings.updates_checking") : t("settings.updates_check")}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!canDownloadUpdate}
+                  onClick={() => void handleDownloadUpdate()}
+                >
+                  {updaterState?.status === "downloading" ? t("settings.updates_downloading") : t("settings.updates_download")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={!canInstallUpdate}
+                  onClick={() => void handleInstallUpdate()}
+                >
+                  {updaterState?.status === "installing" ? t("settings.updates_installing") : t("settings.updates_install")}
+                </Button>
+              </div>
+            </div>
+
+            {updaterState?.status === "downloading" && (
+              <div className="mt-3 space-y-2">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-paw-accent transition-all"
+                    style={{ width: `${Math.max(0, Math.min(100, updaterState.progressPercent))}%` }}
+                  />
+                </div>
+                <p className="typo-meta">
+                  {t("settings.updates_progress", {
+                    percent: Math.round(updaterState.progressPercent),
+                    downloaded: formatBytes(updaterState.downloadedBytes),
+                    total: formatBytes(updaterState.totalBytes),
+                  })}
+                </p>
+              </div>
+            )}
+
+            {updaterState?.message && (
+              <p className="mt-3 text-xs text-rose-300">{updaterState.message}</p>
+            )}
+          </div>
         </section>
 
         <section className={settingsSectionClass}>

@@ -56,6 +56,32 @@ interface ScreenShareSourcePayload {
   appIconDataUrl: string | null;
 }
 
+type UpdaterStatus =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "not-available"
+  | "downloading"
+  | "downloaded"
+  | "installing"
+  | "error";
+
+interface UpdaterStatePayload {
+  enabled: boolean;
+  status: UpdaterStatus;
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseName: string | null;
+  releaseDate: string | null;
+  releaseNotes: string | null;
+  checkedAt: string | null;
+  progressPercent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  message: string | null;
+}
+
 const pawcordApi = {
   system: {
     platform: process.platform,
@@ -94,6 +120,19 @@ const pawcordApi = {
     };
     ipcRenderer.on("api:upload-progress", listener);
     return () => ipcRenderer.removeListener("api:upload-progress", listener);
+  },
+  updater: {
+    getState: () => ipcRenderer.invoke("updater:get-state") as Promise<UpdaterStatePayload>,
+    checkForUpdates: () => ipcRenderer.invoke("updater:check") as Promise<UpdaterStatePayload>,
+    downloadUpdate: () => ipcRenderer.invoke("updater:download") as Promise<UpdaterStatePayload>,
+    installUpdate: () => ipcRenderer.invoke("updater:install") as Promise<UpdaterStatePayload>,
+    onStateChange: (handler: (payload: UpdaterStatePayload) => void) => {
+      const listener = (_event: unknown, payload: UpdaterStatePayload) => {
+        handler(payload);
+      };
+      ipcRenderer.on("updater:state", listener);
+      return () => ipcRenderer.removeListener("updater:state", listener);
+    },
   },
   notify: (title: string, body: string) => ipcRenderer.invoke("notify:show", { title, body }),
 };
