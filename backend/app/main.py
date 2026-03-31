@@ -17,6 +17,7 @@ from app.websocket.handlers import authenticate_websocket_token, handle_client_e
 from app.websocket.manager import manager
 
 settings = get_settings()
+is_production = settings.env.lower() == "production"
 
 
 @asynccontextmanager
@@ -25,7 +26,14 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    debug=settings.debug,
+    lifespan=lifespan,
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    openapi_url=None if is_production else "/openapi.json",
+)
 setup_cors(app)
 setup_rate_limiter(app)
 app.add_middleware(SecurityHeadersMiddleware)
