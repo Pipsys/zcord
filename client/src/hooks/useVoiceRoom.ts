@@ -45,6 +45,16 @@ interface UseVoiceRoomResult {
   recoverRemoteScreen: (remoteUserId: string, options?: { forceReset?: boolean; reason?: string }) => Promise<boolean>;
 }
 
+type VoiceCueKind =
+  | "join"
+  | "leave"
+  | "mic-on"
+  | "mic-off"
+  | "deafen-on"
+  | "deafen-off"
+  | "stream-on"
+  | "stream-off";
+
 const buildIceServers = (): RTCIceServer[] => {
   const stunConfigured = import.meta.env.VITE_WEBRTC_STUN_URLS as string | undefined;
   const stunUrls =
@@ -87,17 +97,56 @@ const ICE_RESTART_MAX_ATTEMPTS = 2;
 const SCREEN_SHARE_TARGET_FPS = 60;
 const DEFAULT_JOIN_SOUND_PATH = "sounds/voice-join.wav";
 const DEFAULT_LEAVE_SOUND_PATH = "sounds/voice-leave.wav";
-const PRESENCE_SOUND_VOLUME_RAW = Number(import.meta.env.VITE_VOICE_PRESENCE_SOUND_VOLUME);
-const PRESENCE_SOUND_VOLUME = Number.isFinite(PRESENCE_SOUND_VOLUME_RAW)
-  ? Math.min(1, Math.max(0, PRESENCE_SOUND_VOLUME_RAW))
+const DEFAULT_MIC_ON_SOUND_PATH = "sounds/voice-mic-on.wav";
+const DEFAULT_MIC_OFF_SOUND_PATH = "sounds/voice-mic-off.wav";
+const DEFAULT_DEAFEN_ON_SOUND_PATH = "sounds/voice-deafen-on.wav";
+const DEFAULT_DEAFEN_OFF_SOUND_PATH = "sounds/voice-deafen-off.wav";
+const DEFAULT_STREAM_ON_SOUND_PATH = "sounds/voice-stream-on.wav";
+const DEFAULT_STREAM_OFF_SOUND_PATH = "sounds/voice-stream-off.wav";
+const VOICE_CUE_SOUND_VOLUME_RAW = Number(import.meta.env.VITE_VOICE_PRESENCE_SOUND_VOLUME);
+const VOICE_CUE_SOUND_VOLUME = Number.isFinite(VOICE_CUE_SOUND_VOLUME_RAW)
+  ? Math.min(1, Math.max(0, VOICE_CUE_SOUND_VOLUME_RAW))
   : 0.5;
 
-const resolvePresenceSoundUrl = (kind: "join" | "leave"): string => {
-  const configured =
-    kind === "join"
-      ? (import.meta.env.VITE_VOICE_JOIN_SOUND_URL as string | undefined)
-      : (import.meta.env.VITE_VOICE_LEAVE_SOUND_URL as string | undefined);
-  const fallbackPath = kind === "join" ? DEFAULT_JOIN_SOUND_PATH : DEFAULT_LEAVE_SOUND_PATH;
+const resolveVoiceCueSoundUrl = (kind: VoiceCueKind): string => {
+  let configured: string | undefined;
+  let fallbackPath = DEFAULT_JOIN_SOUND_PATH;
+
+  switch (kind) {
+    case "join":
+      configured = import.meta.env.VITE_VOICE_JOIN_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_JOIN_SOUND_PATH;
+      break;
+    case "leave":
+      configured = import.meta.env.VITE_VOICE_LEAVE_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_LEAVE_SOUND_PATH;
+      break;
+    case "mic-on":
+      configured = import.meta.env.VITE_VOICE_MIC_ON_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_MIC_ON_SOUND_PATH;
+      break;
+    case "mic-off":
+      configured = import.meta.env.VITE_VOICE_MIC_OFF_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_MIC_OFF_SOUND_PATH;
+      break;
+    case "deafen-on":
+      configured = import.meta.env.VITE_VOICE_DEAFEN_ON_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_DEAFEN_ON_SOUND_PATH;
+      break;
+    case "deafen-off":
+      configured = import.meta.env.VITE_VOICE_DEAFEN_OFF_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_DEAFEN_OFF_SOUND_PATH;
+      break;
+    case "stream-on":
+      configured = import.meta.env.VITE_VOICE_STREAM_ON_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_STREAM_ON_SOUND_PATH;
+      break;
+    case "stream-off":
+      configured = import.meta.env.VITE_VOICE_STREAM_OFF_SOUND_URL as string | undefined;
+      fallbackPath = DEFAULT_STREAM_OFF_SOUND_PATH;
+      break;
+  }
+
   const normalized = typeof configured === "string" && configured.trim().length > 0 ? configured.trim() : fallbackPath;
 
   if (typeof window === "undefined") {
@@ -245,13 +294,30 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   const lastRejoinSocketRef = useRef<WebSocket | null>(null);
   const sendGatewayEventRef = useRef<(type: string, data: Record<string, unknown>) => boolean>(() => false);
   const presenceAudioContextRef = useRef<AudioContext | null>(null);
-  const presenceAudioElementsRef = useRef<{ join: HTMLAudioElement | null; leave: HTMLAudioElement | null }>({
+  const presenceAudioElementsRef = useRef<Record<VoiceCueKind, HTMLAudioElement | null>>({
     join: null,
     leave: null,
+    "mic-on": null,
+    "mic-off": null,
+    "deafen-on": null,
+    "deafen-off": null,
+    "stream-on": null,
+    "stream-off": null,
   });
-  const failedPresenceWavRef = useRef<{ join: boolean; leave: boolean }>({ join: false, leave: false });
+  const failedPresenceWavRef = useRef<Record<VoiceCueKind, boolean>>({
+    join: false,
+    leave: false,
+    "mic-on": false,
+    "mic-off": false,
+    "deafen-on": false,
+    "deafen-off": false,
+    "stream-on": false,
+    "stream-off": false,
+  });
   const previousRemoteParticipantIdsRef = useRef<Set<string>>(new Set());
   const presenceBaselineChannelRef = useRef<string | null>(null);
+  const previousRemoteVoiceStatesRef = useRef<Map<string, { muted: boolean; deafened: boolean; screenSharing: boolean }>>(new Map());
+  const voiceStateBaselineChannelRef = useRef<string | null>(null);
 
   const participants = useMemo(() => {
     if (!connectedChannelId) {
@@ -332,7 +398,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     [socket],
   );
 
-  const playPresenceTone = useCallback((kind: "join" | "leave"): void => {
+  const playPresenceTone = useCallback((kind: VoiceCueKind): void => {
     const AudioContextCtor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextCtor) {
       return;
@@ -350,7 +416,17 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       void context.resume().catch(() => undefined);
     }
 
-    const notes = kind === "join" ? [740, 988] : [520, 392];
+    const notesByCue: Record<VoiceCueKind, number[]> = {
+      join: [740, 988],
+      leave: [520, 392],
+      "mic-on": [780, 940],
+      "mic-off": [460, 360],
+      "deafen-on": [410, 300],
+      "deafen-off": [540, 700],
+      "stream-on": [620, 784, 988],
+      "stream-off": [988, 784, 620],
+    };
+    const notes = notesByCue[kind];
     const noteDuration = 0.07;
     const gapDuration = 0.03;
     const startAt = context.currentTime + 0.005;
@@ -379,15 +455,15 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     });
   }, []);
 
-  const getPresenceAudioElement = useCallback((kind: "join" | "leave"): HTMLAudioElement => {
+  const getPresenceAudioElement = useCallback((kind: VoiceCueKind): HTMLAudioElement => {
     const existing = presenceAudioElementsRef.current[kind];
     if (existing) {
       return existing;
     }
 
-    const audio = new Audio(resolvePresenceSoundUrl(kind));
+    const audio = new Audio(resolveVoiceCueSoundUrl(kind));
     audio.preload = "auto";
-    audio.volume = PRESENCE_SOUND_VOLUME;
+    audio.volume = VOICE_CUE_SOUND_VOLUME;
     audio.addEventListener("error", () => {
       failedPresenceWavRef.current[kind] = true;
     });
@@ -397,7 +473,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
   }, []);
 
   const playPresenceCue = useCallback(
-    (kind: "join" | "leave"): void => {
+    (kind: VoiceCueKind): void => {
       if (failedPresenceWavRef.current[kind]) {
         playPresenceTone(kind);
         return;
@@ -467,6 +543,52 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     if (leftCount > 0 && joinedCount === 0) {
       playPresenceCue("leave");
     }
+  }, [connectedChannelId, currentUserId, participants, playPresenceCue]);
+
+  useEffect(() => {
+    if (!connectedChannelId) {
+      previousRemoteVoiceStatesRef.current.clear();
+      voiceStateBaselineChannelRef.current = null;
+      return;
+    }
+
+    const remoteParticipants = participants.filter((participant) => participant.user_id !== currentUserId);
+    const nextRemoteStates = new Map<string, { muted: boolean; deafened: boolean; screenSharing: boolean }>();
+
+    for (const participant of remoteParticipants) {
+      nextRemoteStates.set(participant.user_id, {
+        muted: participant.muted,
+        deafened: participant.deafened,
+        screenSharing: Boolean(participant.screen_sharing),
+      });
+    }
+
+    if (voiceStateBaselineChannelRef.current !== connectedChannelId) {
+      voiceStateBaselineChannelRef.current = connectedChannelId;
+      previousRemoteVoiceStatesRef.current = nextRemoteStates;
+      return;
+    }
+
+    const previousRemoteStates = previousRemoteVoiceStatesRef.current;
+
+    for (const [remoteUserId, nextState] of nextRemoteStates.entries()) {
+      const previousState = previousRemoteStates.get(remoteUserId);
+      if (!previousState) {
+        continue;
+      }
+
+      if (previousState.muted !== nextState.muted) {
+        playPresenceCue(nextState.muted ? "mic-off" : "mic-on");
+      }
+      if (previousState.deafened !== nextState.deafened) {
+        playPresenceCue(nextState.deafened ? "deafen-on" : "deafen-off");
+      }
+      if (previousState.screenSharing !== nextState.screenSharing) {
+        playPresenceCue(nextState.screenSharing ? "stream-on" : "stream-off");
+      }
+    }
+
+    previousRemoteVoiceStatesRef.current = nextRemoteStates;
   }, [connectedChannelId, currentUserId, participants, playPresenceCue]);
 
   const buildAudioConstraints = useCallback((deviceId?: string): MediaTrackConstraints => {
@@ -812,6 +934,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     clearLocalScreenState(true);
+    playPresenceCue("stream-off");
     const channelId = connectedChannelIdRef.current;
     if (channelId) {
       sendGatewayEventRef.current("VOICE_STATE_UPDATE", {
@@ -827,7 +950,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       await renegotiatePeer(remoteUserId);
     }
     return true;
-  }, [clearLocalScreenState, deafened, muted, renegotiatePeer]);
+  }, [clearLocalScreenState, deafened, muted, playPresenceCue, renegotiatePeer]);
 
   useEffect(() => {
     void refreshInputDevices();
@@ -1362,6 +1485,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     localStreamRef.current?.getAudioTracks().forEach((track) => {
       track.enabled = !nextMuted;
     });
+    playPresenceCue(nextMuted ? "mic-off" : "mic-on");
 
     if (connectedChannelId) {
       sendGatewayEvent("VOICE_STATE_UPDATE", {
@@ -1371,11 +1495,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         screen_sharing: Boolean(localScreenTrackRef.current),
       });
     }
-  }, [connectedChannelId, deafened, muted, sendGatewayEvent]);
+  }, [connectedChannelId, deafened, muted, playPresenceCue, sendGatewayEvent]);
 
   const toggleDeafened = useCallback(() => {
     const nextDeafened = !deafened;
     setDeafened(nextDeafened);
+    playPresenceCue(nextDeafened ? "deafen-on" : "deafen-off");
     if (connectedChannelId) {
       sendGatewayEvent("VOICE_STATE_UPDATE", {
         channel_id: connectedChannelId,
@@ -1384,7 +1509,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         screen_sharing: Boolean(localScreenTrackRef.current),
       });
     }
-  }, [connectedChannelId, deafened, muted, sendGatewayEvent]);
+  }, [connectedChannelId, deafened, muted, playPresenceCue, sendGatewayEvent]);
 
   const toggleScreenShare = useCallback(async (preferredSourceId?: string): Promise<boolean> => {
     if (!connectedChannelIdRef.current) {
@@ -1500,6 +1625,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     localScreenAudioTrackRef.current = screenAudioTrack;
     setScreenSharing(true);
     setLocalScreenStream(screenStream);
+    playPresenceCue("stream-on");
     sendGatewayEvent("VOICE_STATE_UPDATE", {
       channel_id: connectedChannelIdRef.current,
       server_id: connectedServerIdRef.current,
@@ -1550,7 +1676,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     }
 
     return true;
-  }, [refreshScreenSources, renegotiatePeer, selectedScreenSourceId, setScreenSource, stopScreenShare]);
+  }, [deafened, muted, playPresenceCue, refreshScreenSources, renegotiatePeer, selectedScreenSourceId, setScreenSource, stopScreenShare]);
 
   useEffect(() => {
     if (!screenSharing || !localScreenTrackRef.current) {
@@ -2033,7 +2159,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       setRemoteStreams({});
       setRemoteScreenStreams({});
       const presenceAudioElements = presenceAudioElementsRef.current;
-      for (const key of ["join", "leave"] as const) {
+      for (const key of ["join", "leave", "mic-on", "mic-off", "deafen-on", "deafen-off", "stream-on", "stream-off"] as const) {
         const audio = presenceAudioElements[key];
         if (!audio) {
           continue;
@@ -2042,7 +2168,16 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         audio.src = "";
         presenceAudioElements[key] = null;
       }
-      failedPresenceWavRef.current = { join: false, leave: false };
+      failedPresenceWavRef.current = {
+        join: false,
+        leave: false,
+        "mic-on": false,
+        "mic-off": false,
+        "deafen-on": false,
+        "deafen-off": false,
+        "stream-on": false,
+        "stream-off": false,
+      };
       if (presenceAudioContextRef.current) {
         void presenceAudioContextRef.current.close().catch(() => undefined);
         presenceAudioContextRef.current = null;

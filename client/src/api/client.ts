@@ -42,6 +42,15 @@ const extractErrorMessage = <T>(response: ApiResponse<T>): string => {
     } else if ("detail" in response.data) {
       message = String((response.data as { detail: string }).detail);
     }
+  } else if (typeof response.data === "string") {
+    const trimmed = response.data.trim();
+    if (trimmed.length > 0 && trimmed.length <= 240) {
+      message = trimmed;
+    }
+  }
+
+  if (response.status === 413 && message === `Request failed with status ${response.status}`) {
+    message = "Payload too large. Try a smaller file.";
   }
   return message;
 };

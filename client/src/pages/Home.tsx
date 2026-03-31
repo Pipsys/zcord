@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+﻿import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
@@ -37,6 +37,82 @@ import type { Channel, FriendRelation, FriendStatus, Message } from "@/types";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type FriendTab = "online" | "all" | "add";
+type DmCallStage = "outgoing-ringing" | "incoming-ringing" | "connecting" | "connected";
+type DmCallSignalType = "offer" | "answer" | "ice-candidate";
+
+interface IncomingDmCallInvite {
+  callId: string;
+  channelId: string;
+  callerId: string;
+  callerName: string;
+  callerAvatar: string | null;
+}
+
+interface ActiveDmCall {
+  callId: string;
+  channelId: string;
+  peerId: string;
+  peerName: string;
+  peerAvatar: string | null;
+  stage: DmCallStage;
+  isCaller: boolean;
+}
+
+const DM_CALL_RING_INCOMING_PATH = "sounds/dm-call-incoming.wav";
+const DM_CALL_RING_OUTGOING_PATH = "sounds/dm-call-outgoing.wav";
+const DM_CALL_ACCEPT_PATH = "sounds/dm-call-accept.wav";
+const DM_CALL_DECLINE_PATH = "sounds/dm-call-decline.wav";
+const DM_CALL_END_PATH = "sounds/dm-call-end.wav";
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+const resolveDmCallSoundUrl = (raw: string): string => {
+  if (typeof window === "undefined") {
+    return raw;
+  }
+  if (/^(https?:|file:|data:|blob:)/i.test(raw)) {
+    return raw;
+  }
+  try {
+    return new URL(raw, window.location.href).toString();
+  } catch {
+    return raw;
+  }
+};
+
+const buildDirectCallIceServers = (): RTCIceServer[] => {
+  const stunConfigured = import.meta.env.VITE_WEBRTC_STUN_URLS as string | undefined;
+  const stunUrls =
+    typeof stunConfigured === "string" && stunConfigured.trim().length > 0
+      ? stunConfigured
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0)
+      : ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"];
+
+  const servers: RTCIceServer[] = [{ urls: stunUrls }];
+
+  const turnConfigured = import.meta.env.VITE_WEBRTC_TURN_URL as string | undefined;
+  const turnUsername = import.meta.env.VITE_WEBRTC_TURN_USERNAME as string | undefined;
+  const turnCredential = import.meta.env.VITE_WEBRTC_TURN_CREDENTIAL as string | undefined;
+  const turnUrls =
+    typeof turnConfigured === "string" && turnConfigured.trim().length > 0
+      ? turnConfigured
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0)
+      : [];
+
+  if (turnUrls.length > 0 && turnUsername && turnCredential) {
+    servers.push({
+      urls: turnUrls,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  }
+
+  return servers;
+};
 
 const formatPeerId = (relation: FriendRelation, currentUserId: string | null): string =>
   relation.requester_id === currentUserId ? relation.addressee_id : relation.requester_id;
@@ -48,6 +124,17 @@ const compactPreview = (value: string): string => {
     return "...";
   }
   return normalized.slice(0, 90);
+};
+
+const formatCallDuration = (totalSeconds: number): string => {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
 const pickLatestMessage = (messages: Message[]): Message | null => {
@@ -151,6 +238,34 @@ const HomePage = () => {
   const prefetchedChannelIdsRef = useRef<Set<string>>(new Set());
   const lastReadAckByChannelRef = useRef<Record<string, string>>({});
 
+  const [incomingCallInvite, setIncomingCallInvite] = useState<IncomingDmCallInvite | null>(null);
+  const [activeDmCall, setActiveDmCall] = useState<ActiveDmCall | null>(null);
+  const [remoteCallStream, setRemoteCallStream] = useState<MediaStream | null>(null);
+  const [callMuted, setCallMuted] = useState(false);
+  const [callDeafened, setCallDeafened] = useState(false);
+  const [isDmCallOverlayOpen, setIsDmCallOverlayOpen] = useState(false);
+  const [dmCallElapsedSec, setDmCallElapsedSec] = useState(0);
+
+  const incomingCallInviteRef = useRef<IncomingDmCallInvite | null>(null);
+  const activeDmCallRef = useRef<ActiveDmCall | null>(null);
+  const callPeerRef = useRef<RTCPeerConnection | null>(null);
+  const callLocalStreamRef = useRef<MediaStream | null>(null);
+  const pendingCallIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const remoteCallAudioRef = useRef<HTMLAudioElement | null>(null);
+  const callLoopAudioRef = useRef<{ incoming: HTMLAudioElement | null; outgoing: HTMLAudioElement | null }>({
+    incoming: null,
+    outgoing: null,
+  });
+  const callOneShotAudioRef = useRef<Record<"accept" | "decline" | "end", HTMLAudioElement | null>>({
+    accept: null,
+    decline: null,
+    end: null,
+  });
+  const outgoingCallTimeoutRef = useRef<number | null>(null);
+  const dmCallConnectedAtRef = useRef<number | null>(null);
+
+  const dmCallIceServers = useMemo(() => buildDirectCallIceServers(), []);
+
   const { data: serverData } = useServersQuery();
   const { data: friends } = useFriendsQuery();
   const { data: meUser } = useMeQuery();
@@ -206,6 +321,769 @@ const HomePage = () => {
 
   const effectiveUser = user ?? meUser ?? null;
   const currentUserId = effectiveUser?.id ?? null;
+  const activeDmCallStageLabel = useMemo(() => {
+    if (!activeDmCall) {
+      return "";
+    }
+    if (activeDmCall.stage === "outgoing-ringing") {
+      return t("dm.call_ringing");
+    }
+    if (activeDmCall.stage === "incoming-ringing") {
+      return t("dm.call_incoming");
+    }
+    if (activeDmCall.stage === "connecting") {
+      return t("dm.call_connecting");
+    }
+    return t("dm.call_connected");
+  }, [activeDmCall, t]);
+
+  useEffect(() => {
+    incomingCallInviteRef.current = incomingCallInvite;
+  }, [incomingCallInvite]);
+
+  useEffect(() => {
+    activeDmCallRef.current = activeDmCall;
+  }, [activeDmCall]);
+
+  useEffect(() => {
+    if (activeDmCall?.callId) {
+      setIsDmCallOverlayOpen(true);
+      return;
+    }
+    setIsDmCallOverlayOpen(false);
+  }, [activeDmCall?.callId]);
+
+  useEffect(() => {
+    if (!activeDmCall) {
+      dmCallConnectedAtRef.current = null;
+      setDmCallElapsedSec(0);
+      return;
+    }
+    if (activeDmCall.stage === "connected") {
+      if (dmCallConnectedAtRef.current === null) {
+        dmCallConnectedAtRef.current = Date.now();
+        setDmCallElapsedSec(0);
+      }
+      return;
+    }
+    dmCallConnectedAtRef.current = null;
+    setDmCallElapsedSec(0);
+  }, [activeDmCall?.callId, activeDmCall?.stage]);
+
+  useEffect(() => {
+    if (!activeDmCall || activeDmCall.stage !== "connected" || dmCallConnectedAtRef.current === null) {
+      return;
+    }
+    const tick = () => {
+      if (dmCallConnectedAtRef.current === null) {
+        setDmCallElapsedSec(0);
+        return;
+      }
+      setDmCallElapsedSec(Math.floor((Date.now() - dmCallConnectedAtRef.current) / 1000));
+    };
+    tick();
+    const timerId = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timerId);
+  }, [activeDmCall?.callId, activeDmCall?.stage]);
+
+  const sendRealtimeEvent = useCallback(
+    (type: string, data: Record<string, unknown>): boolean => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+      socket.send(JSON.stringify({ t: type, d: data }));
+      return true;
+    },
+    [socket],
+  );
+
+  const resolvePeerMeta = useCallback(
+    (peerId: string): { name: string; avatar: string | null } => {
+      const relation = (friends ?? []).find((item) => formatPeerId(item, currentUserId) === peerId);
+      if (!relation) {
+        return { name: shortId(peerId), avatar: null };
+      }
+      return {
+        name: formatPeerName(relation, currentUserId),
+        avatar: formatPeerAvatar(relation, currentUserId),
+      };
+    },
+    [currentUserId, friends],
+  );
+
+  const stopCallLoopingSounds = useCallback(() => {
+    for (const key of ["incoming", "outgoing"] as const) {
+      const audio = callLoopAudioRef.current[key];
+      if (!audio) {
+        continue;
+      }
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  }, []);
+
+  const getLoopSound = useCallback((kind: "incoming" | "outgoing"): HTMLAudioElement => {
+    const existing = callLoopAudioRef.current[kind];
+    if (existing) {
+      return existing;
+    }
+
+    const configured =
+      kind === "incoming"
+        ? (import.meta.env.VITE_DM_CALL_RING_INCOMING_URL as string | undefined)
+        : (import.meta.env.VITE_DM_CALL_RING_OUTGOING_URL as string | undefined);
+    const path = kind === "incoming" ? DM_CALL_RING_INCOMING_PATH : DM_CALL_RING_OUTGOING_PATH;
+    const audio = new Audio(resolveDmCallSoundUrl(typeof configured === "string" && configured.trim().length > 0 ? configured.trim() : path));
+    audio.loop = true;
+    audio.preload = "auto";
+    audio.volume = 0.48;
+    callLoopAudioRef.current[kind] = audio;
+    return audio;
+  }, []);
+
+  const startCallLoopingSound = useCallback(
+    (kind: "incoming" | "outgoing") => {
+      const audio = getLoopSound(kind);
+      for (const key of ["incoming", "outgoing"] as const) {
+        if (key !== kind) {
+          const other = callLoopAudioRef.current[key];
+          if (other) {
+            other.pause();
+            other.currentTime = 0;
+          }
+        }
+      }
+      audio.currentTime = 0;
+      const playback = audio.play();
+      if (playback && typeof playback.catch === "function") {
+        void playback.catch(() => undefined);
+      }
+    },
+    [getLoopSound],
+  );
+
+  const getOneShotCallSound = useCallback((kind: "accept" | "decline" | "end"): HTMLAudioElement => {
+    const existing = callOneShotAudioRef.current[kind];
+    if (existing) {
+      return existing;
+    }
+
+    let configured: string | undefined;
+    let path = DM_CALL_ACCEPT_PATH;
+    if (kind === "accept") {
+      configured = import.meta.env.VITE_DM_CALL_ACCEPT_SOUND_URL as string | undefined;
+      path = DM_CALL_ACCEPT_PATH;
+    } else if (kind === "decline") {
+      configured = import.meta.env.VITE_DM_CALL_DECLINE_SOUND_URL as string | undefined;
+      path = DM_CALL_DECLINE_PATH;
+    } else {
+      configured = import.meta.env.VITE_DM_CALL_END_SOUND_URL as string | undefined;
+      path = DM_CALL_END_PATH;
+    }
+
+    const audio = new Audio(resolveDmCallSoundUrl(typeof configured === "string" && configured.trim().length > 0 ? configured.trim() : path));
+    audio.preload = "auto";
+    audio.volume = 0.56;
+    callOneShotAudioRef.current[kind] = audio;
+    return audio;
+  }, []);
+
+  const playOneShotCallSound = useCallback(
+    (kind: "accept" | "decline" | "end") => {
+      const audio = getOneShotCallSound(kind);
+      audio.currentTime = 0;
+      const playback = audio.play();
+      if (playback && typeof playback.catch === "function") {
+        void playback.catch(() => undefined);
+      }
+    },
+    [getOneShotCallSound],
+  );
+
+  const clearOutgoingCallTimeout = useCallback(() => {
+    if (outgoingCallTimeoutRef.current !== null) {
+      window.clearTimeout(outgoingCallTimeoutRef.current);
+      outgoingCallTimeoutRef.current = null;
+    }
+  }, []);
+
+  const ensureLocalCallStream = useCallback(async (): Promise<MediaStream> => {
+    if (callLocalStreamRef.current) {
+      return callLocalStreamRef.current;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+    callLocalStreamRef.current = stream;
+    setCallMuted(false);
+    return stream;
+  }, []);
+
+  const cleanupDirectCall = useCallback(
+    (options?: { notifyPeer?: boolean; playEndCue?: boolean }) => {
+      const call = activeDmCallRef.current;
+      clearOutgoingCallTimeout();
+      stopCallLoopingSounds();
+
+      if (options?.notifyPeer && call) {
+        sendRealtimeEvent("DM_CALL_END", {
+          channel_id: call.channelId,
+          call_id: call.callId,
+        });
+      }
+
+      if (callPeerRef.current) {
+        callPeerRef.current.onicecandidate = null;
+        callPeerRef.current.ontrack = null;
+        callPeerRef.current.onconnectionstatechange = null;
+        callPeerRef.current.close();
+        callPeerRef.current = null;
+      }
+
+      if (callLocalStreamRef.current) {
+        for (const track of callLocalStreamRef.current.getTracks()) {
+          track.stop();
+        }
+        callLocalStreamRef.current = null;
+      }
+
+      pendingCallIceCandidatesRef.current = [];
+      setRemoteCallStream(null);
+      setCallMuted(false);
+      setCallDeafened(false);
+      setIncomingCallInvite(null);
+      incomingCallInviteRef.current = null;
+      setActiveDmCall(null);
+      activeDmCallRef.current = null;
+
+      if (options?.playEndCue) {
+        playOneShotCallSound("end");
+      }
+    },
+    [clearOutgoingCallTimeout, playOneShotCallSound, sendRealtimeEvent, stopCallLoopingSounds],
+  );
+
+  const ensureCallPeer = useCallback(
+    (call: ActiveDmCall, localStream: MediaStream): RTCPeerConnection => {
+      const existing = callPeerRef.current;
+      if (existing) {
+        return existing;
+      }
+
+      const peer = new RTCPeerConnection({ iceServers: dmCallIceServers });
+      callPeerRef.current = peer;
+
+      localStream.getAudioTracks().forEach((track) => {
+        peer.addTrack(track, localStream);
+      });
+
+      peer.onicecandidate = (event) => {
+        if (!event.candidate) {
+          return;
+        }
+        const active = activeDmCallRef.current;
+        if (!active) {
+          return;
+        }
+        sendRealtimeEvent("DM_CALL_SIGNAL", {
+          channel_id: active.channelId,
+          call_id: active.callId,
+          target_user_id: active.peerId,
+          signal_type: "ice-candidate",
+          payload: event.candidate.toJSON(),
+        });
+      };
+
+      peer.ontrack = (event) => {
+        const [stream] = event.streams;
+        if (stream) {
+          setRemoteCallStream(stream);
+          return;
+        }
+        const generated = new MediaStream([event.track]);
+        setRemoteCallStream(generated);
+      };
+
+      peer.onconnectionstatechange = () => {
+        const active = activeDmCallRef.current;
+        if (!active) {
+          return;
+        }
+        if (peer.connectionState === "connected") {
+          setActiveDmCall({ ...active, stage: "connected" });
+          return;
+        }
+        if (peer.connectionState === "failed" || peer.connectionState === "disconnected" || peer.connectionState === "closed") {
+          cleanupDirectCall({ notifyPeer: false, playEndCue: false });
+        }
+      };
+
+      return peer;
+    },
+    [cleanupDirectCall, dmCallIceServers, sendRealtimeEvent],
+  );
+
+  const applyRemoteCallDescription = useCallback(async (peer: RTCPeerConnection, description: RTCSessionDescriptionInit) => {
+    await peer.setRemoteDescription(description);
+    const queued = pendingCallIceCandidatesRef.current;
+    if (queued.length > 0) {
+      pendingCallIceCandidatesRef.current = [];
+      for (const candidate of queued) {
+        try {
+          await peer.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch {
+          // Ignore malformed candidates.
+        }
+      }
+    }
+  }, []);
+
+  const processCallSignal = useCallback(
+    async (callId: string, fromUserId: string, signalType: DmCallSignalType, payload: Record<string, unknown>) => {
+      const active = activeDmCallRef.current;
+      if (!active || active.callId !== callId) {
+        return;
+      }
+
+      let localStream: MediaStream;
+      try {
+        localStream = await ensureLocalCallStream();
+      } catch (error) {
+        pushToast(t("voice.connect_failed"), error instanceof Error ? error.message : t("common.unknown_error"));
+        cleanupDirectCall({ notifyPeer: true, playEndCue: false });
+        return;
+      }
+
+      localStream.getAudioTracks().forEach((track) => {
+        track.enabled = !callMuted;
+      });
+
+      const peer = ensureCallPeer(active, localStream);
+
+      if (signalType === "offer") {
+        const sdp = payload.sdp;
+        if (typeof sdp !== "string") {
+          return;
+        }
+        try {
+          await applyRemoteCallDescription(peer, { type: "offer", sdp });
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          sendRealtimeEvent("DM_CALL_SIGNAL", {
+            channel_id: active.channelId,
+            call_id: active.callId,
+            target_user_id: fromUserId,
+            signal_type: "answer",
+            payload: answer,
+          });
+          setActiveDmCall({ ...active, stage: "connecting" });
+        } catch {
+          cleanupDirectCall({ notifyPeer: true, playEndCue: false });
+        }
+        return;
+      }
+
+      if (signalType === "answer") {
+        const sdp = payload.sdp;
+        if (typeof sdp !== "string" || peer.signalingState !== "have-local-offer") {
+          return;
+        }
+        try {
+          await applyRemoteCallDescription(peer, { type: "answer", sdp });
+          setActiveDmCall({ ...active, stage: "connecting" });
+        } catch {
+          cleanupDirectCall({ notifyPeer: true, playEndCue: false });
+        }
+        return;
+      }
+
+      const candidate = payload.candidate;
+      if (typeof candidate !== "string") {
+        return;
+      }
+      const candidateInit: RTCIceCandidateInit = {
+        candidate,
+        sdpMid: typeof payload.sdpMid === "string" ? payload.sdpMid : null,
+        sdpMLineIndex: typeof payload.sdpMLineIndex === "number" ? payload.sdpMLineIndex : null,
+        usernameFragment: typeof payload.usernameFragment === "string" ? payload.usernameFragment : null,
+      };
+
+      if (!peer.remoteDescription) {
+        pendingCallIceCandidatesRef.current.push(candidateInit);
+        return;
+      }
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidateInit));
+      } catch {
+        // Ignore malformed candidates.
+      }
+    },
+    [applyRemoteCallDescription, callMuted, cleanupDirectCall, ensureCallPeer, ensureLocalCallStream, pushToast, sendRealtimeEvent, t],
+  );
+
+  useEffect(() => {
+    const audio = remoteCallAudioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.muted = callDeafened;
+    if (!remoteCallStream) {
+      audio.srcObject = null;
+      return;
+    }
+    audio.srcObject = remoteCallStream;
+    const playback = audio.play();
+    if (playback && typeof playback.catch === "function") {
+      void playback.catch(() => undefined);
+    }
+  }, [callDeafened, remoteCallStream]);
+
+  const startDirectCall = useCallback(async () => {
+    if (!selectedDm) {
+      return;
+    }
+    if (activeDmCallRef.current || incomingCallInviteRef.current) {
+      return;
+    }
+
+    const callId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    const nextCall: ActiveDmCall = {
+      callId,
+      channelId: selectedDm.channelId,
+      peerId: selectedDm.peerId,
+      peerName: selectedDm.peerName,
+      peerAvatar: resolvePeerMeta(selectedDm.peerId).avatar,
+      stage: "outgoing-ringing",
+      isCaller: true,
+    };
+    setActiveDmCall(nextCall);
+    activeDmCallRef.current = nextCall;
+    startCallLoopingSound("outgoing");
+
+    const sent = sendRealtimeEvent("DM_CALL_INVITE", {
+      channel_id: selectedDm.channelId,
+      call_id: callId,
+      target_user_id: selectedDm.peerId,
+    });
+    if (!sent) {
+      cleanupDirectCall({ notifyPeer: false, playEndCue: false });
+      pushToast(t("voice.connect_failed"), t("common.unknown_error"));
+      return;
+    }
+
+    clearOutgoingCallTimeout();
+    outgoingCallTimeoutRef.current = window.setTimeout(() => {
+      const active = activeDmCallRef.current;
+      if (!active || active.callId !== callId || active.stage !== "outgoing-ringing") {
+        return;
+      }
+      cleanupDirectCall({ notifyPeer: true, playEndCue: false });
+      pushToast(t("dm.call_missed"), t("dm.call_no_answer"));
+    }, 30_000);
+  }, [cleanupDirectCall, clearOutgoingCallTimeout, pushToast, resolvePeerMeta, selectedDm, sendRealtimeEvent, startCallLoopingSound, t]);
+
+  const declineIncomingCall = useCallback(() => {
+    const invite = incomingCallInviteRef.current;
+    if (!invite) {
+      return;
+    }
+    stopCallLoopingSounds();
+    playOneShotCallSound("decline");
+    sendRealtimeEvent("DM_CALL_DECLINE", {
+      channel_id: invite.channelId,
+      call_id: invite.callId,
+      reason: "declined",
+    });
+    setIncomingCallInvite(null);
+    incomingCallInviteRef.current = null;
+  }, [playOneShotCallSound, sendRealtimeEvent, stopCallLoopingSounds]);
+
+  const acceptIncomingCall = useCallback(async () => {
+    const invite = incomingCallInviteRef.current;
+    if (!invite) {
+      return;
+    }
+
+    stopCallLoopingSounds();
+    playOneShotCallSound("accept");
+    setIncomingCallInvite(null);
+    incomingCallInviteRef.current = null;
+    setSelectedDm({
+      channelId: invite.channelId,
+      peerId: invite.callerId,
+      peerName: invite.callerName,
+    });
+
+    const nextCall: ActiveDmCall = {
+      callId: invite.callId,
+      channelId: invite.channelId,
+      peerId: invite.callerId,
+      peerName: invite.callerName,
+      peerAvatar: invite.callerAvatar,
+      stage: "connecting",
+      isCaller: false,
+    };
+    setActiveDmCall(nextCall);
+    activeDmCallRef.current = nextCall;
+
+    sendRealtimeEvent("DM_CALL_ACCEPT", {
+      channel_id: invite.channelId,
+      call_id: invite.callId,
+    });
+
+    try {
+      await ensureLocalCallStream();
+    } catch (error) {
+      pushToast(t("voice.connect_failed"), error instanceof Error ? error.message : t("common.unknown_error"));
+      cleanupDirectCall({ notifyPeer: true, playEndCue: false });
+    }
+  }, [cleanupDirectCall, ensureLocalCallStream, playOneShotCallSound, pushToast, sendRealtimeEvent, stopCallLoopingSounds, t]);
+
+  const endDirectCall = useCallback(() => {
+    cleanupDirectCall({ notifyPeer: true, playEndCue: true });
+  }, [cleanupDirectCall]);
+
+  const toggleDirectCallMute = useCallback(() => {
+    const nextMuted = !callMuted;
+    setCallMuted(nextMuted);
+    const stream = callLocalStreamRef.current;
+    if (stream) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = !nextMuted;
+      });
+    }
+  }, [callMuted]);
+
+  const toggleDirectCallDeafen = useCallback(() => {
+    setCallDeafened((current) => !current);
+  }, []);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const onMessage = (event: MessageEvent<string>) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!isRecord(parsed)) {
+        return;
+      }
+
+      const type = parsed.t;
+      const data = parsed.d;
+      if (typeof type !== "string" || !isRecord(data)) {
+        return;
+      }
+
+      if (type === "DM_CALL_INVITE") {
+        const callId = data.call_id;
+        const channelId = data.channel_id;
+        const callerId = data.caller_id;
+        const targetUserId = data.target_user_id;
+        if (typeof callId !== "string" || typeof channelId !== "string" || typeof callerId !== "string") {
+          return;
+        }
+        if (callerId === currentUserId) {
+          return;
+        }
+        if (typeof targetUserId === "string" && targetUserId !== currentUserId) {
+          return;
+        }
+
+        if (activeDmCallRef.current || incomingCallInviteRef.current) {
+          sendRealtimeEvent("DM_CALL_DECLINE", {
+            channel_id: channelId,
+            call_id: callId,
+            reason: "busy",
+          });
+          return;
+        }
+
+        const peerMeta = resolvePeerMeta(callerId);
+        const invite: IncomingDmCallInvite = {
+          callId,
+          channelId,
+          callerId,
+          callerName: peerMeta.name,
+          callerAvatar: peerMeta.avatar,
+        };
+        setIncomingCallInvite(invite);
+        incomingCallInviteRef.current = invite;
+        startCallLoopingSound("incoming");
+        return;
+      }
+
+      if (type === "DM_CALL_ACCEPT") {
+        const callId = data.call_id;
+        const userId = data.user_id;
+        const active = activeDmCallRef.current;
+        if (!active || typeof callId !== "string" || typeof userId !== "string") {
+          return;
+        }
+        if (active.callId !== callId || active.peerId !== userId || !active.isCaller) {
+          return;
+        }
+
+        clearOutgoingCallTimeout();
+        stopCallLoopingSounds();
+        playOneShotCallSound("accept");
+        const connecting = { ...active, stage: "connecting" as const };
+        setActiveDmCall(connecting);
+        activeDmCallRef.current = connecting;
+
+        void (async () => {
+          try {
+            const local = await ensureLocalCallStream();
+            local.getAudioTracks().forEach((track) => {
+              track.enabled = !callMuted;
+            });
+            const peer = ensureCallPeer(connecting, local);
+            const offer = await peer.createOffer({
+              offerToReceiveAudio: true,
+              offerToReceiveVideo: false,
+            });
+            await peer.setLocalDescription(offer);
+            sendRealtimeEvent("DM_CALL_SIGNAL", {
+              channel_id: connecting.channelId,
+              call_id: connecting.callId,
+              target_user_id: connecting.peerId,
+              signal_type: "offer",
+              payload: offer,
+            });
+          } catch (error) {
+            pushToast(t("voice.connect_failed"), error instanceof Error ? error.message : t("common.unknown_error"));
+            cleanupDirectCall({ notifyPeer: true, playEndCue: false });
+          }
+        })();
+        return;
+      }
+
+      if (type === "DM_CALL_DECLINE") {
+        const callId = data.call_id;
+        const userId = data.user_id;
+        const active = activeDmCallRef.current;
+        if (typeof callId !== "string" || typeof userId !== "string") {
+          return;
+        }
+
+        if (incomingCallInviteRef.current && incomingCallInviteRef.current.callId === callId) {
+          setIncomingCallInvite(null);
+          incomingCallInviteRef.current = null;
+          stopCallLoopingSounds();
+        }
+
+        if (!active || active.callId !== callId || active.peerId !== userId) {
+          return;
+        }
+        clearOutgoingCallTimeout();
+        stopCallLoopingSounds();
+        playOneShotCallSound("decline");
+        cleanupDirectCall({ notifyPeer: false, playEndCue: false });
+        pushToast(t("dm.call_declined"), active.peerName);
+        return;
+      }
+
+      if (type === "DM_CALL_END") {
+        const callId = data.call_id;
+        const userId = data.user_id;
+        const active = activeDmCallRef.current;
+        if (typeof callId !== "string" || typeof userId !== "string") {
+          return;
+        }
+        if (incomingCallInviteRef.current && incomingCallInviteRef.current.callId === callId) {
+          setIncomingCallInvite(null);
+          incomingCallInviteRef.current = null;
+          stopCallLoopingSounds();
+          return;
+        }
+        if (!active || active.callId !== callId || active.peerId !== userId) {
+          return;
+        }
+        clearOutgoingCallTimeout();
+        cleanupDirectCall({ notifyPeer: false, playEndCue: true });
+        return;
+      }
+
+      if (type === "DM_CALL_SIGNAL") {
+        const callId = data.call_id;
+        const userId = data.user_id;
+        const signalType = data.signal_type;
+        const payload = data.payload;
+        if (typeof callId !== "string" || typeof userId !== "string") {
+          return;
+        }
+        if (userId === currentUserId) {
+          return;
+        }
+        if (signalType !== "offer" && signalType !== "answer" && signalType !== "ice-candidate") {
+          return;
+        }
+        if (!isRecord(payload)) {
+          return;
+        }
+        void processCallSignal(callId, userId, signalType, payload);
+      }
+    };
+
+    socket.addEventListener("message", onMessage as EventListener);
+    return () => {
+      socket.removeEventListener("message", onMessage as EventListener);
+    };
+  }, [
+    callMuted,
+    cleanupDirectCall,
+    clearOutgoingCallTimeout,
+    currentUserId,
+    ensureCallPeer,
+    ensureLocalCallStream,
+    playOneShotCallSound,
+    processCallSignal,
+    pushToast,
+    resolvePeerMeta,
+    sendRealtimeEvent,
+    socket,
+    startCallLoopingSound,
+    stopCallLoopingSounds,
+    t,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      cleanupDirectCall({ notifyPeer: true, playEndCue: false });
+      for (const key of ["incoming", "outgoing"] as const) {
+        const audio = callLoopAudioRef.current[key];
+        if (!audio) {
+          continue;
+        }
+        audio.pause();
+        audio.src = "";
+        callLoopAudioRef.current[key] = null;
+      }
+      for (const key of ["accept", "decline", "end"] as const) {
+        const audio = callOneShotAudioRef.current[key];
+        if (!audio) {
+          continue;
+        }
+        audio.pause();
+        audio.src = "";
+        callOneShotAudioRef.current[key] = null;
+      }
+    };
+  }, [cleanupDirectCall]);
 
   const handleResizeMove = useCallback((event: PointerEvent) => {
     const state = resizeStateRef.current;
@@ -862,7 +1740,75 @@ const HomePage = () => {
               <span className="text-sm text-paw-text-muted">@</span>
               <h2 className="text-[16px] font-semibold text-paw-text-secondary">{selectedDm.peerName}</h2>
             </div>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void startDirectCall()}
+                disabled={Boolean(activeDmCallRef.current) || Boolean(incomingCallInviteRef.current)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/10 bg-[#2b2d31] px-2.5 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M6.9 3.5h3.6c.6 0 1.1.4 1.3 1l1 3.3c.2.7-.1 1.4-.7 1.7l-1.6.8c1 2 2.6 3.6 4.6 4.6l.8-1.6c.3-.6 1-.9 1.7-.7l3.3 1c.6.2 1 .7 1 1.3v3.6c0 .8-.6 1.4-1.4 1.5h-1.1C10.1 21 3 13.9 2 5.1V3.9C2 3.1 2.6 2.5 3.4 2.5h3.5Z"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {t("dm.call_button")}
+              </button>
+            </div>
           </header>
+
+          {activeDmCall && activeDmCall.channelId === selectedDm.channelId && !isDmCallOverlayOpen ? (
+            <div className="flex items-center justify-between gap-3 border-b border-black/30 bg-[#1e1f22] px-4 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-paw-text-secondary">
+                  {activeDmCall.peerName}
+                </p>
+                <p className="truncate text-xs text-paw-text-muted">{activeDmCallStageLabel}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDmCallOverlayOpen(true)}
+                  className="inline-flex h-8 items-center rounded-md bg-[#2b2d31] px-2 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
+                >
+                  {t("dm.call_overlay_open")}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleDirectCallMute}
+                  className={`inline-flex h-8 items-center rounded-md px-2 text-xs font-semibold transition-colors ${
+                    callMuted
+                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
+                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
+                  }`}
+                >
+                  {callMuted ? t("dm.call_unmute") : t("dm.call_mute")}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleDirectCallDeafen}
+                  className={`inline-flex h-8 items-center rounded-md px-2 text-xs font-semibold transition-colors ${
+                    callDeafened
+                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
+                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
+                  }`}
+                >
+                  {callDeafened ? t("dm.call_undeafen") : t("dm.call_deafen")}
+                </button>
+                <button
+                  type="button"
+                  onClick={endDirectCall}
+                  className="inline-flex h-8 items-center rounded-md bg-[#ed4245] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#c93a3e]"
+                >
+                  {t("dm.call_end")}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="min-h-0 flex-1 overflow-hidden">
             <MessageList
@@ -1096,6 +2042,135 @@ const HomePage = () => {
         </section>
       )}
 
+      {activeDmCall && isDmCallOverlayOpen ? (
+        <div className="fixed inset-0 z-[360]">
+          <div className="absolute inset-0 bg-[#090b12]/82 backdrop-blur-md" />
+          <div className="relative flex h-full flex-col">
+            <div className="flex items-center justify-between border-b border-white/10 bg-[#141720]/72 px-5 py-3 backdrop-blur-md">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-paw-text-muted">{t("dm.call_voice_call")}</p>
+                <p className="truncate text-sm font-semibold text-paw-text-secondary">{activeDmCall.peerName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDmCallOverlayOpen(false)}
+                className="inline-flex h-9 items-center rounded-md border border-white/15 bg-[#2b2d31] px-3 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
+              >
+                {t("dm.call_overlay_close")}
+              </button>
+            </div>
+
+            <div className="flex flex-1 flex-col items-center justify-center px-6 pb-24 pt-8">
+              <div className="relative mb-6 rounded-full border border-white/20 bg-[#1a1f2b]/86 p-4 shadow-[0_18px_48px_rgba(0,0,0,0.42)]">
+                <Avatar src={activeDmCall.peerAvatar} label={activeDmCall.peerName} size="xl" online />
+                <span className="pointer-events-none absolute -inset-1 rounded-full border border-paw-accent/25" />
+              </div>
+              <p className="text-2xl font-semibold tracking-tight text-paw-text-primary">{activeDmCall.peerName}</p>
+              <p className="mt-1 text-sm text-paw-text-muted">{activeDmCallStageLabel}</p>
+              {activeDmCall.stage === "connected" ? (
+                <p className="mt-2 rounded-full border border-white/15 bg-[#1a1d26] px-3 py-1 text-xs font-semibold text-paw-text-secondary">
+                  {t("dm.call_duration", { time: formatCallDuration(dmCallElapsedSec) })}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2">
+              <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-white/15 bg-[#1d212d]/92 px-3 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.46)] backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={toggleDirectCallMute}
+                  className={`inline-flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-xs font-semibold transition-colors ${
+                    callMuted
+                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
+                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
+                  }`}
+                >
+                  {callMuted ? t("dm.call_unmute") : t("dm.call_mute")}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleDirectCallDeafen}
+                  className={`inline-flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-xs font-semibold transition-colors ${
+                    callDeafened
+                      ? "bg-[#ed4245] text-white hover:bg-[#c93a3e]"
+                      : "bg-[#2b2d31] text-paw-text-secondary hover:bg-[#35373c] hover:text-paw-text-primary"
+                  }`}
+                >
+                  {callDeafened ? t("dm.call_undeafen") : t("dm.call_deafen")}
+                </button>
+                <button
+                  type="button"
+                  onClick={endDirectCall}
+                  className="inline-flex h-11 min-w-11 items-center justify-center rounded-full bg-[#ed4245] px-4 text-xs font-semibold text-white transition-colors hover:bg-[#c93a3e]"
+                >
+                  {t("dm.call_end")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeDmCall && !isDmCallOverlayOpen ? (
+        <div className="fixed bottom-6 right-6 z-[350] w-72 rounded-xl border border-white/15 bg-[#1f2330]/94 p-3 shadow-[0_18px_44px_rgba(0,0,0,0.5)] backdrop-blur-md">
+          <div className="mb-2 flex items-center gap-2">
+            <Avatar src={activeDmCall.peerAvatar} label={activeDmCall.peerName} size="sm" online />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-paw-text-secondary">{activeDmCall.peerName}</p>
+              <p className="truncate text-xs text-paw-text-muted">{activeDmCallStageLabel}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsDmCallOverlayOpen(true)}
+              className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-white/15 bg-[#2b2d31] px-2 text-xs font-semibold text-paw-text-secondary transition-colors hover:bg-[#35373c] hover:text-paw-text-primary"
+            >
+              {t("dm.call_overlay_open")}
+            </button>
+            <button
+              type="button"
+              onClick={endDirectCall}
+              className="inline-flex h-8 items-center justify-center rounded-md bg-[#ed4245] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#c93a3e]"
+            >
+              {t("dm.call_end")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <audio ref={remoteCallAudioRef} autoPlay playsInline hidden />
+
+      {incomingCallInvite ? (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-50">
+          <div className="pointer-events-auto w-72 rounded-xl border border-white/10 bg-[#1f2127] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
+            <div className="mb-3 flex items-center gap-3">
+              <Avatar src={incomingCallInvite.callerAvatar} label={incomingCallInvite.callerName} size="md" />
+              <div className="min-w-0">
+                <p className="truncate text-base font-semibold text-paw-text-secondary">{incomingCallInvite.callerName}</p>
+                <p className="truncate text-xs text-paw-text-muted">{t("dm.call_incoming")}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={declineIncomingCall}
+                className="inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-[#ed4245] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#c93a3e]"
+              >
+                {t("dm.call_decline")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void acceptIncomingCall()}
+                className="inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-[#3ba55d] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#2f8a4e]"
+              >
+                {t("dm.call_accept")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ConfirmDialog
         open={pendingDeleteMessage !== null}
         title={t("message.delete_confirm")}
@@ -1111,3 +2186,4 @@ const HomePage = () => {
 };
 
 export default HomePage;
+

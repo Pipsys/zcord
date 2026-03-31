@@ -15,7 +15,7 @@ from app.database import AsyncSessionLocal
 from app.models.channel import Channel, ChannelType
 from app.models.message import Message, MessageReceipt
 from app.models.user import User
-from app.services.channel_access_service import assert_user_can_access_channel
+from app.services.channel_access_service import assert_user_can_access_channel, parse_dm_channel_name
 from app.services.media_service import MediaService
 from app.services.token_revocation_service import is_jti_revoked
 from app.utils.jwt_utils import decode_token
@@ -142,6 +142,34 @@ async def _validate_voice_channel_access(channel_id: str, user_id: str) -> Chann
             return None
 
         return channel
+
+
+async def _validate_dm_channel_access(channel_id: str, user_id: str) -> tuple[Channel, tuple[str, str] | None] | None:
+    try:
+        channel_uuid = UUID(channel_id)
+        user_uuid = UUID(user_id)
+    except ValueError:
+        return None
+
+    async with AsyncSessionLocal() as session:
+        channel = await session.get(Channel, channel_uuid)
+        if channel is None:
+            return None
+        if channel.type not in {ChannelType.dm, ChannelType.group_dm}:
+            return None
+
+        try:
+            await assert_user_can_access_channel(session, channel, user_uuid)
+        except HTTPException:
+            return None
+
+        participants: tuple[str, str] | None = None
+        if channel.type == ChannelType.dm:
+            parsed = parse_dm_channel_name(channel.name)
+            if parsed is not None:
+                participants = (str(parsed[0]), str(parsed[1]))
+
+        return channel, participants
 
 
 async def _load_voice_user_profile(user_id: str) -> tuple[str | None, str | None]:
@@ -290,6 +318,144 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
             await manager.publish_server(server_id, payload)
         else:
             await manager.publish_dm(channel_id, payload)
+        return
+
+    if event_type == ClientEventType.DM_CALL_INVITE.value:
+        channel_id = data.get("channel_id")
+        call_id = data.get("call_id")
+        target_user_id = data.get("target_user_id")
+        if not isinstance(channel_id, str) or not isinstance(call_id, str):
+            return
+        if not isinstance(target_user_id, str):
+            return
+
+        validated = await _validate_dm_channel_access(channel_id, user_id)
+        if validated is None:
+            return
+        _, participants = validated
+        if participants is not None and target_user_id not in participants:
+            return
+        if target_user_id == user_id:
+            return
+
+        payload = {
+            "op": "DISPATCH",
+            "t": GatewayEventType.DM_CALL_INVITE.value,
+            "d": {
+                "channel_id": channel_id,
+                "call_id": call_id,
+                "caller_id": user_id,
+                "target_user_id": target_user_id,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        await manager.publish_dm(channel_id, payload)
+        return
+
+    if event_type == ClientEventType.DM_CALL_ACCEPT.value:
+        channel_id = data.get("channel_id")
+        call_id = data.get("call_id")
+        if not isinstance(channel_id, str) or not isinstance(call_id, str):
+            return
+
+        validated = await _validate_dm_channel_access(channel_id, user_id)
+        if validated is None:
+            return
+
+        payload = {
+            "op": "DISPATCH",
+            "t": GatewayEventType.DM_CALL_ACCEPT.value,
+            "d": {
+                "channel_id": channel_id,
+                "call_id": call_id,
+                "user_id": user_id,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        await manager.publish_dm(channel_id, payload)
+        return
+
+    if event_type == ClientEventType.DM_CALL_DECLINE.value:
+        channel_id = data.get("channel_id")
+        call_id = data.get("call_id")
+        reason = data.get("reason")
+        if not isinstance(channel_id, str) or not isinstance(call_id, str):
+            return
+
+        validated = await _validate_dm_channel_access(channel_id, user_id)
+        if validated is None:
+            return
+
+        payload = {
+            "op": "DISPATCH",
+            "t": GatewayEventType.DM_CALL_DECLINE.value,
+            "d": {
+                "channel_id": channel_id,
+                "call_id": call_id,
+                "user_id": user_id,
+                "reason": reason if isinstance(reason, str) else None,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        await manager.publish_dm(channel_id, payload)
+        return
+
+    if event_type == ClientEventType.DM_CALL_END.value:
+        channel_id = data.get("channel_id")
+        call_id = data.get("call_id")
+        if not isinstance(channel_id, str) or not isinstance(call_id, str):
+            return
+
+        validated = await _validate_dm_channel_access(channel_id, user_id)
+        if validated is None:
+            return
+
+        payload = {
+            "op": "DISPATCH",
+            "t": GatewayEventType.DM_CALL_END.value,
+            "d": {
+                "channel_id": channel_id,
+                "call_id": call_id,
+                "user_id": user_id,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        await manager.publish_dm(channel_id, payload)
+        return
+
+    if event_type == ClientEventType.DM_CALL_SIGNAL.value:
+        channel_id = data.get("channel_id")
+        call_id = data.get("call_id")
+        signal_type = data.get("signal_type")
+        signal_payload = data.get("payload")
+        target_user_id = data.get("target_user_id")
+        if not isinstance(channel_id, str) or not isinstance(call_id, str):
+            return
+        if signal_type not in {"offer", "answer", "ice-candidate"}:
+            return
+        if not isinstance(signal_payload, dict):
+            return
+
+        validated = await _validate_dm_channel_access(channel_id, user_id)
+        if validated is None:
+            return
+        _, participants = validated
+        if isinstance(target_user_id, str) and participants is not None and target_user_id not in participants:
+            return
+
+        payload = {
+            "op": "DISPATCH",
+            "t": GatewayEventType.DM_CALL_SIGNAL.value,
+            "d": {
+                "channel_id": channel_id,
+                "call_id": call_id,
+                "user_id": user_id,
+                "target_user_id": target_user_id if isinstance(target_user_id, str) else None,
+                "signal_type": signal_type,
+                "payload": signal_payload,
+            },
+        }
+        await manager.publish_dm(channel_id, payload)
         return
 
     if event_type == ClientEventType.VOICE_JOIN.value:

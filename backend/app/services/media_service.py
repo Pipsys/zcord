@@ -24,13 +24,13 @@ ALLOWED_AVATAR_MIME_TYPES = {
     "image/jpeg": "jpg",
     "image/gif": "gif",
 }
-SERVER_ICON_MAX_BYTES = 10 * 1024 * 1024
 ALLOWED_SERVER_ICON_MIME_TYPES = {
     "image/png": "png",
     "image/jpeg": "jpg",
     "image/gif": "gif",
 }
-SERVER_BANNER_MAX_BYTES = 15 * 1024 * 1024
+SERVER_ICON_MAX_BYTES = 25 * 1024 * 1024
+SERVER_BANNER_MAX_BYTES = 30 * 1024 * 1024
 ALLOWED_SERVER_BANNER_MIME_TYPES = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -203,11 +203,11 @@ class MediaService:
 
     async def upload_server_icon(self, server_id: uuid.UUID, upload_file: UploadFile) -> str:
         if upload_file.size and upload_file.size > SERVER_ICON_MAX_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server icon exceeds 10MB")
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server icon exceeds 25MB")
 
         payload = await upload_file.read()
         if len(payload) > SERVER_ICON_MAX_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server icon exceeds 10MB")
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server icon exceeds 25MB")
 
         guessed = magic.from_buffer(payload[:2048], mime=True)
         content_type = guessed or upload_file.content_type or ""
@@ -241,11 +241,11 @@ class MediaService:
 
     async def upload_server_banner(self, server_id: uuid.UUID, upload_file: UploadFile) -> str:
         if upload_file.size and upload_file.size > SERVER_BANNER_MAX_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server banner exceeds 15MB")
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server banner exceeds 30MB")
 
         payload = await upload_file.read()
         if len(payload) > SERVER_BANNER_MAX_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server banner exceeds 15MB")
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Server banner exceeds 30MB")
 
         guessed = magic.from_buffer(payload[:2048], mime=True)
         content_type = guessed or upload_file.content_type or ""

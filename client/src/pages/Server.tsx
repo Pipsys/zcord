@@ -36,8 +36,8 @@ import { useUiStore } from "@/store/uiStore";
 import type { Channel, Message } from "@/types";
 
 const VoiceChannel = lazy(() => import("@/components/voice/VoiceChannel").then((module) => ({ default: module.VoiceChannel })));
-const SERVER_ICON_MAX_BYTES = 10 * 1024 * 1024;
-const SERVER_BANNER_MAX_BYTES = 15 * 1024 * 1024;
+const SERVER_ICON_MAX_BYTES = 25 * 1024 * 1024;
+const SERVER_BANNER_MAX_BYTES = 30 * 1024 * 1024;
 const ALLOWED_SERVER_ICON_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif"]);
 
 const compactPreview = (value: string): string => {

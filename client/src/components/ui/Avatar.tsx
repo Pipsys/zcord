@@ -66,7 +66,6 @@ export const Avatar = ({ src, label, size = "md", online = false }: AvatarProps)
             alt={label}
             loading={size === "xl" ? "eager" : "lazy"}
             decoding="async"
-            fetchPriority={size === "xl" ? "high" : "auto"}
             onLoad={() => setLoaded(true)}
             onError={() => {
               setResolvedSrc(null);

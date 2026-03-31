@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuthStore } from "@/store/authStore";
 import { useMessageStore } from "@/store/messageStore";
@@ -259,6 +259,27 @@ interface UseWebSocketResult {
   latencyMs: number | null;
 }
 
+const DEFAULT_MESSAGE_SOUND_PATH = "sounds/message-receive.wav";
+const MESSAGE_SOUND_VOLUME_RAW = Number(import.meta.env.VITE_MESSAGE_SOUND_VOLUME);
+const MESSAGE_SOUND_VOLUME = Number.isFinite(MESSAGE_SOUND_VOLUME_RAW) ? Math.min(1, Math.max(0, MESSAGE_SOUND_VOLUME_RAW)) : 0.55;
+
+const resolveMessageSoundUrl = (): string => {
+  const configured = import.meta.env.VITE_MESSAGE_RECEIVE_SOUND_URL as string | undefined;
+  const normalized = typeof configured === "string" && configured.trim().length > 0 ? configured.trim() : DEFAULT_MESSAGE_SOUND_PATH;
+
+  if (typeof window === "undefined") {
+    return normalized;
+  }
+  if (/^(https?:|file:|data:|blob:)/i.test(normalized)) {
+    return normalized;
+  }
+  try {
+    return new URL(normalized, window.location.href).toString();
+  } catch {
+    return normalized;
+  }
+};
+
 export const useWebSocket = (): UseWebSocketResult => {
   const token = useAuthStore((state) => state.token);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
@@ -277,9 +298,96 @@ export const useWebSocket = (): UseWebSocketResult => {
 
   const deliveryAckedRef = useRef<Set<string>>(new Set());
   const heartbeatSentAtRef = useRef<number | null>(null);
+  const messageAudioRef = useRef<HTMLAudioElement | null>(null);
+  const messageAudioContextRef = useRef<AudioContext | null>(null);
+  const failedMessageWavRef = useRef(false);
+  const lastMessageSoundAtRef = useRef(0);
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [status, setStatus] = useState<GatewayConnectionStatus>("offline");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+
+  const playMessageTone = useCallback(() => {
+    const AudioContextCtor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) {
+      return;
+    }
+    if (!messageAudioContextRef.current) {
+      messageAudioContextRef.current = new AudioContextCtor();
+    }
+    const context = messageAudioContextRef.current;
+    if (!context) {
+      return;
+    }
+    if (context.state === "suspended") {
+      void context.resume().catch(() => undefined);
+    }
+
+    const notes = [820, 1040];
+    const noteDuration = 0.065;
+    const gapDuration = 0.025;
+    const startAt = context.currentTime + 0.005;
+
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const noteStart = startAt + index * (noteDuration + gapDuration);
+      const noteEnd = noteStart + noteDuration;
+
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(frequency, noteStart);
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.exponentialRampToValueAtTime(0.045, noteStart + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(noteStart);
+      oscillator.stop(noteEnd + 0.02);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+    });
+  }, []);
+
+  const getMessageAudioElement = useCallback((): HTMLAudioElement => {
+    const existing = messageAudioRef.current;
+    if (existing) {
+      return existing;
+    }
+
+    const audio = new Audio(resolveMessageSoundUrl());
+    audio.preload = "auto";
+    audio.volume = MESSAGE_SOUND_VOLUME;
+    audio.addEventListener("error", () => {
+      failedMessageWavRef.current = true;
+    });
+    messageAudioRef.current = audio;
+    return audio;
+  }, []);
+
+  const playMessageCue = useCallback(() => {
+    const now = Date.now();
+    if (now - lastMessageSoundAtRef.current < 80) {
+      return;
+    }
+    lastMessageSoundAtRef.current = now;
+
+    if (failedMessageWavRef.current) {
+      playMessageTone();
+      return;
+    }
+
+    const audio = getMessageAudioElement();
+    audio.currentTime = 0;
+    const playback = audio.play();
+    if (playback && typeof playback.catch === "function") {
+      void playback.catch(() => {
+        failedMessageWavRef.current = true;
+        playMessageTone();
+      });
+    }
+  }, [getMessageAudioElement, playMessageTone]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -287,6 +395,21 @@ export const useWebSocket = (): UseWebSocketResult => {
     }, 1_000);
     return () => window.clearInterval(interval);
   }, [pruneTyping]);
+
+  useEffect(() => {
+    return () => {
+      if (messageAudioRef.current) {
+        messageAudioRef.current.pause();
+        messageAudioRef.current.src = "";
+        messageAudioRef.current = null;
+      }
+      failedMessageWavRef.current = false;
+      if (messageAudioContextRef.current) {
+        void messageAudioContextRef.current.close().catch(() => undefined);
+        messageAudioContextRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -393,6 +516,10 @@ export const useWebSocket = (): UseWebSocketResult => {
           }
           upsertMessage(message.channel_id, message);
           clearTyping(message.channel_id, message.author_id);
+
+          if (message.author_id !== currentUserId) {
+            playMessageCue();
+          }
 
           if (message.author_id !== currentUserId && !deliveryAckedRef.current.has(message.id) && next.readyState === WebSocket.OPEN) {
             deliveryAckedRef.current.add(message.id);
@@ -545,7 +672,22 @@ export const useWebSocket = (): UseWebSocketResult => {
       setStatus("offline");
       setLatencyMs(null);
     };
-  }, [clearTyping, currentUserId, deleteMessage, enqueueSignal, markDelivered, markRead, removeParticipant, setParticipantsSnapshot, setTyping, token, updateParticipantState, upsertMessage, upsertParticipant]);
+  }, [
+    clearTyping,
+    currentUserId,
+    deleteMessage,
+    enqueueSignal,
+    markDelivered,
+    markRead,
+    playMessageCue,
+    removeParticipant,
+    setParticipantsSnapshot,
+    setTyping,
+    token,
+    updateParticipantState,
+    upsertMessage,
+    upsertParticipant,
+  ]);
 
   return {
     socket,
