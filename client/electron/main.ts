@@ -21,7 +21,7 @@ if (process.platform === "darwin") {
 
 const BACKEND_CERT_FINGERPRINT = process.env.BACKEND_CERT_FINGERPRINT ?? "";
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
-const PROD_DEFAULT_DOMAIN = "pawcord.ru";
+const PROD_DEFAULT_DOMAIN = "api.pawcord.ru";
 const PROD_DEFAULT_API_URL = `https://${PROD_DEFAULT_DOMAIN}/api/v1`;
 
 const toByteArray = (value: unknown): Uint8Array => {
@@ -103,7 +103,7 @@ const getPublicOrigins = (): string[] => {
   const apiOrigin = new URL(getApiEndpoint()).origin;
   const configuredPublicOrigin = normalizeEnvValue(process.env.BACKEND_PUBLIC_ORIGIN);
   const configuredMediaOrigin = normalizeEnvValue(process.env.MEDIA_PUBLIC_ORIGIN);
-  const defaults = ["https://pawcord.ru", "https://www.pawcord.ru"];
+  const defaults = ["https://api.pawcord.ru", "https://pawcord.ru", "https://www.pawcord.ru"];
   return Array.from(
     new Set(
       [apiOrigin, configuredPublicOrigin, configuredMediaOrigin, ...defaults].filter(
