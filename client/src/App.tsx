@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Suspense, lazy, useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { useDirectChannelsQuery } from "@/api/queries";
@@ -13,6 +13,7 @@ import RegisterPage from "@/pages/Register";
 import ServerPage from "@/pages/Server";
 import { RealtimeProvider, useRealtime } from "@/realtime/RealtimeProvider";
 import { useAuthStore } from "@/store/authStore";
+import { useMessageStore } from "@/store/messageStore";
 import { useUiStore } from "@/store/uiStore";
 
 const SettingsPage = lazy(() => import("@/pages/Settings"));
@@ -61,11 +62,33 @@ const AppShell = () => {
   const location = useLocation();
   const { socket } = useRealtime();
   const { data: directChannels } = useDirectChannelsQuery();
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
+  const messagesByChannel = useMessageStore((state) => state.byChannel);
   const isHomeRoute = location.pathname.startsWith("/app/home");
   const contentKey = `${resolveAppContentKey(location.pathname)}${location.search}`;
   const dmChannelIds = (directChannels ?? [])
     .filter((channel) => channel.type === "dm" || channel.type === "group_dm")
     .map((channel) => channel.id);
+
+  const taskbarUnreadCount = useMemo(() => {
+    if (!currentUserId) {
+      return 0;
+    }
+
+    let nextTotal = 0;
+    for (const channelMessages of Object.values(messagesByChannel)) {
+      for (const message of channelMessages) {
+        if (message.author_id === currentUserId) {
+          continue;
+        }
+        const readBy = Array.isArray(message.read_by) ? message.read_by : [];
+        if (!readBy.includes(currentUserId)) {
+          nextTotal += 1;
+        }
+      }
+    }
+    return nextTotal;
+  }, [currentUserId, messagesByChannel]);
 
   useEffect(() => {
     if (!socket || dmChannelIds.length === 0) {
@@ -91,6 +114,17 @@ const AppShell = () => {
     socket.addEventListener("open", subscribeAllDmChannels, { once: true });
     return () => socket.removeEventListener("open", subscribeAllDmChannels);
   }, [dmChannelIds, socket]);
+
+  useEffect(() => {
+    void window.pawcord.window.setBadgeCount(taskbarUnreadCount);
+  }, [taskbarUnreadCount]);
+
+  useEffect(
+    () => () => {
+      void window.pawcord.window.setBadgeCount(0);
+    },
+    [],
+  );
 
   return (
     <ProtectedRoute>

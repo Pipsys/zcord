@@ -90,6 +90,7 @@ const pawcordApi = {
     minimize: () => ipcRenderer.invoke("window:minimize"),
     maximize: () => ipcRenderer.invoke("window:maximize"),
     close: () => ipcRenderer.invoke("window:close"),
+    setBadgeCount: (count: number) => ipcRenderer.invoke("app:set-badge-count", count) as Promise<boolean>,
   },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard:write-text", text) as Promise<boolean>,

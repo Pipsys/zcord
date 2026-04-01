@@ -527,6 +527,14 @@ ipcMain.handle("window:maximize", () => {
   }
 });
 ipcMain.handle("window:close", () => mainWindow?.close());
+ipcMain.handle("app:set-badge-count", (_event, value: number) => {
+  const normalized = Number.isFinite(value) ? Math.max(0, Math.min(9_999, Math.floor(value))) : 0;
+  try {
+    return app.setBadgeCount(normalized);
+  } catch {
+    return false;
+  }
+});
 ipcMain.handle("clipboard:write-text", (_event, text: string) => {
   clipboard.writeText(text);
   return true;

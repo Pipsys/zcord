@@ -2,11 +2,15 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
 
+import { useDirectChannelsQuery } from "@/api/queries";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useI18n } from "@/i18n/provider";
+import { useAuthStore } from "@/store/authStore";
+import { useMessageStore } from "@/store/messageStore";
 import { useServerStore } from "@/store/serverStore";
 import type { VoiceParticipant } from "@/store/voiceStore";
 import { useVoiceStore } from "@/store/voiceStore";
+import type { Message } from "@/types";
 import zcordLogo from "../../../animal.png";
 
 const homeItemBase =
@@ -30,6 +34,43 @@ const getVoiceMemberName = (participant: VoiceParticipant): string => {
   return `user-${participant.user_id.slice(0, 6)}`;
 };
 
+interface UnreadChannelSummary {
+  channelId: string;
+  channelName: string;
+  count: number;
+}
+
+interface UnreadServerSummary {
+  total: number;
+  channels: UnreadChannelSummary[];
+}
+
+const getUnreadCountForChannel = (messages: Message[], currentUserId: string | null): number => {
+  if (!currentUserId || messages.length === 0) {
+    return 0;
+  }
+  let unreadCount = 0;
+  for (const message of messages) {
+    if (message.author_id === currentUserId) {
+      continue;
+    }
+    const readBy = Array.isArray(message.read_by) ? message.read_by : [];
+    if (!readBy.includes(currentUserId)) {
+      unreadCount += 1;
+    }
+  }
+  return unreadCount;
+};
+
+const getFallbackServerId = (messages: Message[]): string | null => {
+  for (const message of messages) {
+    if (typeof message.server_id === "string" && message.server_id.trim().length > 0) {
+      return message.server_id;
+    }
+  }
+  return null;
+};
+
 export const Sidebar = () => {
   const { t } = useI18n();
   const location = useLocation();
@@ -39,6 +80,9 @@ export const Sidebar = () => {
   const activeServerId = useServerStore((state) => state.activeServerId);
   const setActiveServer = useServerStore((state) => state.setActiveServer);
   const participantsByChannel = useVoiceStore((state) => state.participantsByChannel);
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
+  const messagesByChannel = useMessageStore((state) => state.byChannel);
+  const { data: knownChannels } = useDirectChannelsQuery();
 
   const homeActive = location.pathname.startsWith("/app/home");
   const voiceMembersByServer = useMemo(() => {
@@ -66,6 +110,58 @@ export const Sidebar = () => {
     return result;
   }, [participantsByChannel]);
 
+  const { unreadByServer, unreadDmCount } = useMemo(() => {
+    const channelMetaById = new Map<string, { name: string; serverId: string | null }>();
+    for (const channel of knownChannels ?? []) {
+      channelMetaById.set(channel.id, {
+        name: channel.name,
+        serverId: channel.server_id,
+      });
+    }
+
+    const nextUnreadByServer: Record<string, UnreadServerSummary> = {};
+    let nextUnreadDmCount = 0;
+
+    for (const [channelId, channelMessages] of Object.entries(messagesByChannel)) {
+      const unreadCount = getUnreadCountForChannel(channelMessages, currentUserId);
+      if (unreadCount <= 0) {
+        continue;
+      }
+
+      const knownMeta = channelMetaById.get(channelId);
+      const serverId = knownMeta?.serverId ?? getFallbackServerId(channelMessages);
+      const channelName = knownMeta?.name?.trim() ? knownMeta.name : `channel-${channelId.slice(0, 6)}`;
+
+      if (!serverId) {
+        nextUnreadDmCount += unreadCount;
+        continue;
+      }
+
+      if (!nextUnreadByServer[serverId]) {
+        nextUnreadByServer[serverId] = { total: 0, channels: [] };
+      }
+
+      nextUnreadByServer[serverId].total += unreadCount;
+      nextUnreadByServer[serverId].channels.push({ channelId, channelName, count: unreadCount });
+    }
+
+    for (const summary of Object.values(nextUnreadByServer)) {
+      summary.channels.sort((left, right) => {
+        if (right.count !== left.count) {
+          return right.count - left.count;
+        }
+        return left.channelName.localeCompare(right.channelName);
+      });
+    }
+
+    return {
+      unreadByServer: nextUnreadByServer,
+      unreadDmCount: nextUnreadDmCount,
+    };
+  }, [currentUserId, knownChannels, messagesByChannel]);
+
+  const unreadDmLabel = unreadDmCount > 99 ? "99+" : `${unreadDmCount}`;
+
   return (
     <aside className="flex h-full w-[var(--layout-sidebar-width)] flex-col items-center gap-2 border-r border-black/35 bg-paw-bg-tertiary py-3">
       <Tooltip label="Home" side="right">
@@ -80,6 +176,11 @@ export const Sidebar = () => {
               <img src={zcordLogo} alt="zcord" className="block h-full w-full object-contain" />
             </span>
             {homeActive ? <span className="absolute -left-[11px] h-5 w-1 rounded-r-full bg-white" /> : null}
+            {unreadDmCount > 0 ? (
+              <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-paw-accent px-1.5 text-[11px] font-bold leading-none text-white shadow-[0_0_0_2px_var(--color-bg-tertiary)]">
+                {unreadDmLabel}
+              </span>
+            ) : null}
           </motion.div>
         </Link>
       </Tooltip>
@@ -90,14 +191,40 @@ export const Sidebar = () => {
         {servers.map((server) => {
           const active = server.id === activeServerId || server.id === routeServerId;
           const serverVoiceMembers = voiceMembersByServer[server.id] ?? [];
+          const unreadSummary = unreadByServer[server.id];
+          const unreadCount = unreadSummary?.total ?? 0;
+          const unreadLabel = unreadCount > 99 ? "99+" : `${unreadCount}`;
+          const unreadChannelPreview = unreadSummary?.channels.slice(0, 3) ?? [];
+          const hiddenUnreadChannels = Math.max(0, (unreadSummary?.channels.length ?? 0) - unreadChannelPreview.length);
           const previewVoiceMembers = serverVoiceMembers.slice(0, 4);
           const hiddenVoiceMembersCount = Math.max(0, serverVoiceMembers.length - previewVoiceMembers.length);
           const tooltipContent = (
-              <div className="w-[150px]">
+              <div className="w-[180px]">
                 <div className="typo-meta truncate font-semibold text-paw-text-primary">{server.name}</div>
+                {unreadCount > 0 ? (
+                  <div className="mt-1.5 border-t border-white/10 pt-1.5">
+                    <p className="typo-meta font-semibold text-paw-text-secondary">{t("home.unread_messages", { count: unreadCount })}</p>
+                    <div className="mt-1 space-y-1">
+                      {unreadChannelPreview.map((item) => {
+                        const unreadChannelLabel = item.count > 99 ? "99+" : `${item.count}`;
+                        return (
+                          <div key={item.channelId} className="flex items-center justify-between gap-2">
+                            <p className="typo-meta truncate text-paw-text-secondary">#{item.channelName}</p>
+                            <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-paw-accent px-1.5 text-[10px] font-semibold leading-none text-white">
+                              {unreadChannelLabel}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {hiddenUnreadChannels > 0 ? (
+                        <p className="typo-meta text-paw-text-muted">+{hiddenUnreadChannels}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 {serverVoiceMembers.length > 0 ? (
                 <>
-                  <div className="mt-1.5 flex items-center gap-2">
+                  <div className={`flex items-center gap-2 ${unreadCount > 0 ? "mt-2" : "mt-1.5"}`}>
                     <span className="grid h-6 w-6 place-items-center rounded-md border border-white/15 bg-white/10 text-paw-text-secondary">
                       <VoiceTooltipIcon />
                     </span>
@@ -144,6 +271,11 @@ export const Sidebar = () => {
                   style={{ backgroundColor: active ? "var(--color-accent-primary)" : "var(--color-bg-secondary)", color: "var(--color-text-primary)" }}
                 >
                   {active ? <span className="absolute -left-[11px] h-5 w-1 rounded-r-full bg-white" /> : null}
+                  {unreadCount > 0 ? (
+                    <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-paw-accent px-1.5 text-[11px] font-bold leading-none text-white shadow-[0_0_0_2px_var(--color-bg-tertiary)]">
+                      {unreadLabel}
+                    </span>
+                  ) : null}
                   {server.icon_url ? (
                     <img src={server.icon_url} alt={server.name} className="block h-11 w-11 rounded-[14px] object-cover" />
                   ) : (

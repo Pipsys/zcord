@@ -74,6 +74,7 @@ interface PawcordBridge {
     minimize: () => Promise<void>;
     maximize: () => Promise<void>;
     close: () => Promise<void>;
+    setBadgeCount: (count: number) => Promise<boolean>;
   };
   clipboard: {
     writeText: (text: string) => Promise<boolean>;
