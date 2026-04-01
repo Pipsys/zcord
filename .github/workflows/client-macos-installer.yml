@@ -1,6 +1,9 @@
 name: Build Client Installers
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag_name:
@@ -104,7 +107,7 @@ jobs:
 
   publish-release-assets:
     name: Attach installers to GitHub Release
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
+    if: github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
     needs:
       - build-windows
       - build-macos
@@ -115,6 +118,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "value=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
           fi
