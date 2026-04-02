@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { produce } from "immer";
 
-import { APP_THEME, type ThemeId } from "@/theme/themes";
+import { APP_THEME, isThemeId, type ThemeId } from "@/theme/themes";
 
 interface Toast {
   id: string;
@@ -10,12 +10,39 @@ interface Toast {
 }
 
 const MAX_TOASTS_VISIBLE = 3;
+const THEME_STORAGE_KEY = "pawcord.theme";
 
-const applyTheme = (): void => {
+const applyTheme = (theme: ThemeId): void => {
   if (typeof document === "undefined") {
     return;
   }
-  document.documentElement.setAttribute("data-theme", APP_THEME);
+  document.documentElement.setAttribute("data-theme", theme);
+};
+
+const persistTheme = (theme: ThemeId): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Ignore persistence errors in restricted environments.
+  }
+};
+
+const resolveStoredTheme = (): ThemeId => {
+  if (typeof window === "undefined") {
+    return APP_THEME;
+  }
+  try {
+    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (value && isThemeId(value)) {
+      return value;
+    }
+  } catch {
+    // Ignore storage read errors and fall back to default theme.
+  }
+  return APP_THEME;
 };
 
 interface UiState {
@@ -26,6 +53,7 @@ interface UiState {
   pushToast: (title: string, description: string) => void;
   removeToast: (id: string) => void;
   hydrateTheme: () => void;
+  setTheme: (theme: ThemeId) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -64,10 +92,20 @@ export const useUiStore = create<UiState>((set) => ({
       }),
     ),
   hydrateTheme: () => {
-    applyTheme();
+    const theme = resolveStoredTheme();
+    applyTheme(theme);
     set(
       produce<UiState>((state) => {
-        state.theme = APP_THEME;
+        state.theme = theme;
+      }),
+    );
+  },
+  setTheme: (theme) => {
+    applyTheme(theme);
+    persistTheme(theme);
+    set(
+      produce<UiState>((state) => {
+        state.theme = theme;
       }),
     );
   },

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuthStore } from "@/store/authStore";
+import { useChannelStore } from "@/store/channelStore";
 import { useMessageStore } from "@/store/messageStore";
+import { useServerStore } from "@/store/serverStore";
 import { useVoiceStore } from "@/store/voiceStore";
 import type { GatewayEvent, Message } from "@/types";
 
@@ -283,6 +285,8 @@ const resolveMessageSoundUrl = (): string => {
 export const useWebSocket = (): UseWebSocketResult => {
   const token = useAuthStore((state) => state.token);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
+  const knownChannels = useChannelStore((state) => state.channels);
+  const knownServers = useServerStore((state) => state.servers);
   const upsertMessage = useMessageStore((state) => state.upsertMessage);
   const deleteMessage = useMessageStore((state) => state.deleteMessage);
   const markDelivered = useMessageStore((state) => state.markDelivered);
@@ -388,6 +392,35 @@ export const useWebSocket = (): UseWebSocketResult => {
       });
     }
   }, [getMessageAudioElement, playMessageTone]);
+
+  const getNotificationTitle = useCallback(
+    (message: Message): string => {
+      if (typeof message.server_id === "string" && message.server_id.trim().length > 0) {
+        const serverName =
+          knownServers.find((server) => server.id === message.server_id)?.name ?? `server-${message.server_id.slice(0, 6)}`;
+        const channelName =
+          knownChannels.find((channel) => channel.id === message.channel_id)?.name ?? `channel-${message.channel_id.slice(0, 6)}`;
+        return `${serverName} / #${channelName}`;
+      }
+      const channelName = knownChannels.find((channel) => channel.id === message.channel_id)?.name;
+      if (channelName && channelName.startsWith("dm:")) {
+        return "Direct messages";
+      }
+      if (channelName) {
+        return `#${channelName}`;
+      }
+      return "New message";
+    },
+    [knownChannels, knownServers],
+  );
+
+  const getNotificationBody = useCallback((message: Message): string => {
+    const normalizedAuthor = message.author_username?.trim();
+    const author = normalizedAuthor && normalizedAuthor.length > 0 ? normalizedAuthor : `user-${message.author_id.slice(0, 6)}`;
+    const normalizedContent = message.content.replace(/\s+/g, " ").trim();
+    const preview = normalizedContent.length > 0 ? normalizedContent : "Attachment";
+    return `${author}: ${preview.slice(0, 140)}`;
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -519,6 +552,12 @@ export const useWebSocket = (): UseWebSocketResult => {
 
           if (message.author_id !== currentUserId) {
             playMessageCue();
+            const shouldNotifyServerMessage = typeof message.server_id === "string" && message.server_id.trim().length > 0;
+            if (shouldNotifyServerMessage) {
+              void window.pawcord
+                .notify(getNotificationTitle(message), getNotificationBody(message))
+                .catch(() => undefined);
+            }
           }
 
           if (message.author_id !== currentUserId && !deliveryAckedRef.current.has(message.id) && next.readyState === WebSocket.OPEN) {
@@ -675,6 +714,8 @@ export const useWebSocket = (): UseWebSocketResult => {
   }, [
     clearTyping,
     currentUserId,
+    getNotificationBody,
+    getNotificationTitle,
     deleteMessage,
     enqueueSignal,
     markDelivered,

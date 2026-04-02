@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 
 import { useI18n } from "@/i18n/provider";
 import type { ScreenShareSource, VoiceInputDevice } from "@/hooks/useVoiceRoom";
@@ -61,7 +61,7 @@ export const VoiceControls = ({
           onClick={onToggleMute}
           disabled={!connected}
           title={muted ? t("voice.unmute") : t("voice.mute")}
-          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#171a20] text-white/40" : muted ? "call-control-btn--active" : ""}`}
+          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[var(--color-bg-secondary)] text-white/40" : muted ? "call-control-btn--active" : ""}`}
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
             <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
@@ -77,7 +77,7 @@ export const VoiceControls = ({
           onClick={onToggleDeafen}
           disabled={!connected}
           title={deafened ? t("voice.undeafen") : t("voice.deafen")}
-          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#171a20] text-white/40" : deafened ? "call-control-btn--active" : ""}`}
+          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[var(--color-bg-secondary)] text-white/40" : deafened ? "call-control-btn--active" : ""}`}
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
             <path d="M4 14h4l5 4V6L8 10H4z" />
@@ -95,7 +95,7 @@ export const VoiceControls = ({
           title={screenSharing ? t("voice.stop_screen_share") : t("voice.screen_share")}
           className={`${buttonBaseClass} ${
             !connected
-              ? "cursor-not-allowed bg-[#171a20] text-white/40"
+              ? "cursor-not-allowed bg-[var(--color-bg-secondary)] text-white/40"
               : screenSharing
                 ? "call-control-btn--screen"
                 : ""
@@ -109,7 +109,7 @@ export const VoiceControls = ({
           </svg>
         </button>
 
-        <button disabled className={`${buttonBaseClass} cursor-not-allowed bg-[#171a20] text-white/40`} title={t("voice.video")}>
+        <button disabled className={`${buttonBaseClass} cursor-not-allowed bg-[var(--color-bg-secondary)] text-white/40`} title={t("voice.video")}>
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
             <rect x="3" y="7" width="12" height="10" rx="2" />
             <path d="M15 11l6-3v8l-6-3z" />
@@ -119,7 +119,7 @@ export const VoiceControls = ({
         <button
           onClick={() => setShowAdvanced((value) => !value)}
           disabled={!connected}
-          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[#171a20] text-white/40" : "bg-[#242932] hover:bg-[#282d36]"}`}
+          className={`${buttonBaseClass} ${!connected ? "cursor-not-allowed bg-[var(--color-bg-secondary)] text-white/40" : "bg-[var(--state-active-bg)] hover:bg-[var(--state-hover-bg)]"}`}
           title="Devices"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
@@ -148,7 +148,7 @@ export const VoiceControls = ({
               onChange={(event) => {
                 void onInputDeviceChange(event.target.value);
               }}
-              className="min-w-[220px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
+              className="min-w-[220px] rounded-md border border-white/12 bg-[var(--color-bg-tertiary)] px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
             >
               {inputDevices.map((device: VoiceInputDevice, index: number) => (
                 <option key={`${device.deviceId}-${index}`} value={device.deviceId}>
@@ -165,7 +165,7 @@ export const VoiceControls = ({
               onChange={(event) => {
                 void onScreenSourceChange(event.target.value);
               }}
-              className="max-w-[300px] rounded-md border border-white/12 bg-black/25 px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
+              className="max-w-[300px] rounded-md border border-white/12 bg-[var(--color-bg-tertiary)] px-2 py-1 text-xs leading-4 text-paw-text-secondary focus:border-paw-accent focus:outline-none focus:ring-2 focus:ring-paw-accent/30"
               disabled={!connected}
             >
               <option value="__auto__">{t("voice.screen_source_auto")}</option>
@@ -182,7 +182,7 @@ export const VoiceControls = ({
             onClick={() => {
               void onRefreshScreenSources();
             }}
-            className="rounded-md border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-black/35 hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+            className="rounded-md border border-white/10 bg-[var(--color-bg-tertiary)] px-2.5 py-1.5 text-xs font-semibold leading-4 text-paw-text-secondary transition-colors hover:bg-[var(--state-hover-bg)] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
             disabled={!connected}
           >
             {t("voice.refresh_sources")}
@@ -197,4 +197,5 @@ export const VoiceControls = ({
     </div>
   );
 };
+
 

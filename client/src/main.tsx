@@ -45,8 +45,8 @@ const renderFatalScreen = (title: string, details: string) => {
   root.style.zIndex = "2147483647";
 
   root.innerHTML = `
-    <div style="min-height:100vh;display:grid;place-items:center;background:#0f0e14;color:#e8ecf2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px;">
-      <div style="max-width:780px;width:100%;border:1px solid rgba(255,255,255,0.16);border-radius:14px;background:rgba(18,22,34,.72);padding:20px 24px;">
+    <div style="min-height:100vh;display:grid;place-items:center;background:#000;color:#e8ecf2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px;">
+      <div style="max-width:780px;width:100%;border:1px solid rgba(255,255,255,0.1);border-radius:14px;background:rgba(9,11,15,.88);padding:20px 24px;">
         <h2 style="margin:0 0 10px;font-size:20px;">${escapeHtml(title)}</h2>
         <pre style="margin:0;white-space:pre-wrap;word-break:break-word;opacity:.9;">${escapeHtml(details)}</pre>
       </div>

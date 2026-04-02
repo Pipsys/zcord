@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { useI18n } from "@/i18n/provider";
 import { useAuthStore } from "@/store/authStore";
 import { useUiStore } from "@/store/uiStore";
+import { THEMES, type ThemeId } from "@/theme/themes";
 import type { User } from "@/types";
 
 const AVATAR_MAX_BYTES = 25 * 1024 * 1024;
@@ -42,12 +43,21 @@ const formatReleaseDate = (value: string | null): string | null => {
   return parsed.toLocaleString();
 };
 
+const getThemePreview = (theme: ThemeId): readonly [string, string, string] => {
+  if (theme === THEMES.OLED_BLACK) {
+    return ["#0c0d10", "#08090c", "#050609"];
+  }
+  return ["#181b22", "#12151b", "#0d1015"];
+};
+
 const SettingsPage = () => {
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const pushToast = useUiStore((state) => state.pushToast);
+  const theme = useUiStore((state) => state.theme);
+  const setTheme = useUiStore((state) => state.setTheme);
   const updateMe = useUpdateMeMutation();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -157,6 +167,20 @@ const SettingsPage = () => {
   const canDownloadUpdate = updaterState?.status === "available";
   const canInstallUpdate = updaterState?.status === "downloaded";
   const releaseDateLabel = formatReleaseDate(updaterState?.releaseDate ?? null);
+  const themeOptions = [
+    {
+      id: THEMES.GRAPHITE_GRAY,
+      label: t("settings.theme_graphite_gray"),
+      description: t("settings.theme_graphite_gray_desc"),
+      preview: getThemePreview(THEMES.GRAPHITE_GRAY),
+    },
+    {
+      id: THEMES.OLED_BLACK,
+      label: t("settings.theme_oled_black"),
+      description: t("settings.theme_oled_black_desc"),
+      preview: getThemePreview(THEMES.OLED_BLACK),
+    },
+  ] as const;
 
   const handlePickAvatar = async (file: File | null) => {
     if (!file) {
@@ -311,7 +335,7 @@ const SettingsPage = () => {
             </div>
           </div>
 
-          <div className="mb-4 rounded-xl border border-white/10 bg-[#0f1116] p-3">
+          <div className="mb-4 rounded-xl border border-white/10 bg-[var(--color-bg-tertiary)] p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
               <p className="typo-body font-semibold text-paw-text-secondary">{t("settings.call_banner")}</p>
               <input
@@ -326,7 +350,7 @@ const SettingsPage = () => {
               </Button>
             </div>
             <p className="typo-meta mb-3">{t("settings.banner_hint")}</p>
-            <div className="overflow-hidden rounded-lg border border-white/10 bg-[#0b0d12]">
+            <div className="overflow-hidden rounded-lg border border-white/10 bg-[var(--color-bg-secondary)]">
               {user?.banner_url ? (
                 <img src={user.banner_url} alt={t("settings.call_banner")} className="h-24 w-full object-cover" />
               ) : (
@@ -406,17 +430,56 @@ const SettingsPage = () => {
               type="checkbox"
               checked={notifications}
               onChange={(event) => setNotifications(event.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-[#0f1116] accent-paw-accent"
+              className="h-4 w-4 rounded border-white/20 bg-[var(--color-bg-tertiary)] accent-paw-accent"
             />
             {t("settings.notifications_toggle")}
           </label>
         </section>
 
         <section className={settingsSectionClass}>
+          <h2 className="typo-title-md mb-2 text-paw-text-primary">{t("settings.appearance")}</h2>
+          <p className="typo-meta mb-4">{t("settings.appearance_description")}</p>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {themeOptions.map((option) => {
+              const isActiveTheme = option.id === theme;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setTheme(option.id)}
+                  aria-pressed={isActiveTheme}
+                  className={`ui-focus-ring rounded-xl border p-3 text-left transition-colors ${
+                    isActiveTheme
+                      ? "border-paw-accent/50 bg-[var(--state-selected-bg)]"
+                      : "border-white/10 bg-[var(--color-bg-tertiary)] hover:bg-[var(--state-hover-bg)]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="typo-body font-semibold text-paw-text-secondary">{option.label}</p>
+                    {isActiveTheme ? (
+                      <span className="rounded-full border border-paw-accent/40 bg-paw-accent/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-paw-text-primary">
+                        {t("settings.theme_active")}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="typo-meta mt-1">{option.description}</p>
+                  <div className="mt-3 flex gap-1.5">
+                    {option.preview.map((color) => (
+                      <span key={color} className="h-3 flex-1 rounded-full border border-white/10" style={{ background: color }} />
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className={settingsSectionClass}>
           <h2 className="typo-title-md mb-2 text-paw-text-primary">{t("settings.updates")}</h2>
           <p className="typo-meta mb-4">{t("settings.updates_description")}</p>
 
-          <div className="rounded-xl border border-white/10 bg-[#0f1116] p-3">
+          <div className="rounded-xl border border-white/10 bg-[var(--color-bg-tertiary)] p-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <p className="typo-body truncate font-semibold text-paw-text-secondary">
@@ -426,7 +489,7 @@ const SettingsPage = () => {
                 {updaterState?.latestVersion && (
                   <p className="typo-meta mt-1">
                     {t("settings.updates_latest_version", { version: updaterState.latestVersion })}
-                    {releaseDateLabel ? ` · ${releaseDateLabel}` : ""}
+                    {releaseDateLabel ? ` | ${releaseDateLabel}` : ""}
                   </p>
                 )}
               </div>

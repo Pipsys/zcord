@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
 
 import { Avatar } from "@/components/ui/Avatar";
@@ -841,7 +841,7 @@ export const VoiceChannel = ({
                 <article
                   key={participant.user_id}
                   className={clsx(
-                    "voice-tile-motion group relative min-h-[260px] overflow-hidden rounded-lg border bg-[#111214] md:min-h-[320px] xl:min-h-[360px]",
+                    "voice-tile-motion group relative min-h-[260px] overflow-hidden rounded-lg border bg-[var(--color-bg-tertiary)] md:min-h-[320px] xl:min-h-[360px]",
                     isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                   )}
                 >
@@ -856,10 +856,10 @@ export const VoiceChannel = ({
                       className="h-full w-full bg-black object-contain"
                     />
                   ) : (
-                    <div className="relative grid h-full w-full place-items-center bg-[#171a20]">
+                    <div className="relative grid h-full w-full place-items-center bg-[var(--color-bg-secondary)]">
                       <div
                         className={clsx(
-                          "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
+                          "grid h-32 w-32 place-items-center rounded-full border bg-[var(--color-bg-elevated)]",
                           isSpeaking
                             ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.28)]"
                             : "border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.28)]",
@@ -893,7 +893,7 @@ export const VoiceChannel = ({
                           className="flex items-center gap-1.5 rounded-md border border-white/20 bg-black/55 px-2 py-1 text-white shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
                           title={`${t("voice.volume")}: ${Math.round(getStreamVolume(participant.user_id) * 100)}%`}
                         >
-                          <span className="text-[#b7bdc8]">
+                          <span className="text-paw-text-muted">
                             <StreamVolumeIcon muted={getStreamVolume(participant.user_id) <= 0.01} />
                           </span>
                           <input
@@ -905,7 +905,7 @@ export const VoiceChannel = ({
                             onChange={(event) => {
                               setStreamVolume(participant.user_id, Number(event.target.value) / 100);
                             }}
-                            className="h-1.5 w-24 cursor-pointer accent-[#6f7cff]"
+                            className="h-1.5 w-24 cursor-pointer accent-paw-accent"
                             aria-label={t("voice.volume")}
                           />
                         </label>
@@ -944,14 +944,14 @@ export const VoiceChannel = ({
                   <article
                     key={participant.user_id}
                     className={clsx(
-                      "voice-tile-motion relative min-h-[160px] overflow-hidden rounded-lg border bg-[#171a20]",
+                      "voice-tile-motion relative min-h-[160px] overflow-hidden rounded-lg border bg-[var(--color-bg-secondary)]",
                       isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                     )}
                   >
-                    <div className="relative grid h-full w-full place-items-center bg-[#171a20]">
+                    <div className="relative grid h-full w-full place-items-center bg-[var(--color-bg-secondary)]">
                       <div
                         className={clsx(
-                          "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
+                          "grid h-32 w-32 place-items-center rounded-full border bg-[var(--color-bg-elevated)]",
                           isSpeaking
                             ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.28)]"
                             : "border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.28)]",
@@ -993,7 +993,7 @@ export const VoiceChannel = ({
               <article
                 key={participant.user_id}
                 className={clsx(
-                  "voice-tile-motion group relative min-h-[180px] overflow-hidden rounded-lg border bg-[#171a20]",
+                  "voice-tile-motion group relative min-h-[180px] overflow-hidden rounded-lg border bg-[var(--color-bg-secondary)]",
                   isSpeaking ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.35)]" : "border-white/10 hover:border-white/20",
                 )}
               >
@@ -1008,10 +1008,10 @@ export const VoiceChannel = ({
                     className="h-full w-full bg-black object-contain"
                   />
                 ) : (
-                  <div className="relative grid h-full w-full place-items-center bg-[#171a20]">
+                  <div className="relative grid h-full w-full place-items-center bg-[var(--color-bg-secondary)]">
                     <div
                       className={clsx(
-                        "grid h-32 w-32 place-items-center rounded-full border bg-[#23262d]",
+                        "grid h-32 w-32 place-items-center rounded-full border bg-[var(--color-bg-elevated)]",
                         isSpeaking
                           ? "border-[#43b581] shadow-[0_0_0_2px_rgba(67,181,129,0.28)]"
                           : "border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.28)]",
@@ -1045,7 +1045,7 @@ export const VoiceChannel = ({
                         className="flex items-center gap-1.5 rounded-md border border-white/20 bg-black/55 px-2 py-1 text-white opacity-0 shadow-[0_2px_10px_rgba(0,0,0,0.35)] transition group-hover:opacity-100"
                         title={`${t("voice.volume")}: ${Math.round(getStreamVolume(participant.user_id) * 100)}%`}
                       >
-                        <span className="text-[#b7bdc8]">
+                        <span className="text-paw-text-muted">
                           <StreamVolumeIcon muted={getStreamVolume(participant.user_id) <= 0.01} />
                         </span>
                         <input
@@ -1057,7 +1057,7 @@ export const VoiceChannel = ({
                           onChange={(event) => {
                             setStreamVolume(participant.user_id, Number(event.target.value) / 100);
                           }}
-                          className="h-1.5 w-24 cursor-pointer accent-[#6f7cff]"
+                          className="h-1.5 w-24 cursor-pointer accent-paw-accent"
                           aria-label={t("voice.volume")}
                         />
                       </label>
@@ -1129,7 +1129,7 @@ export const VoiceChannel = ({
                   onClick={() => setScreenPickerTab(tab)}
                   className={clsx(
                     "rounded px-2.5 py-1 text-xs font-semibold transition-colors",
-                    screenPickerTab === tab ? "bg-[#5865f2] text-white" : "text-paw-text-muted hover:bg-white/10 hover:text-paw-text-secondary",
+                    screenPickerTab === tab ? "bg-paw-accent text-white" : "text-paw-text-muted hover:bg-white/10 hover:text-paw-text-secondary",
                   )}
                 >
                   {tab === "all"
@@ -1167,7 +1167,7 @@ export const VoiceChannel = ({
                     className={clsx(
                       "group overflow-hidden rounded-lg border text-left transition-colors",
                       screenPickerSourceId === source.id
-                        ? "border-[#6f7cff] bg-[#303645]"
+                        ? "border-paw-accent/70 bg-[var(--state-selected-bg)]"
                         : "border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/5",
                     )}
                   >
@@ -1271,4 +1271,5 @@ export const VoiceChannel = ({
     </section>
   );
 };
+
 

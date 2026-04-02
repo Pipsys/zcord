@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 :root,
-:root[data-theme="graphite-blue"] {
+:root[data-theme="graphite-gray"] {
   --color-bg-primary: #181b22;
   --color-bg-secondary: #12151b;
   --color-bg-tertiary: #0d1015;
@@ -72,6 +72,16 @@
   --state-focus-ring: rgba(88, 101, 242, 0.4);
   --state-disabled-opacity: 0.58;
   --state-unread-bg: rgba(88, 101, 242, 0.12);
+  --profile-card-border: rgba(255, 255, 255, 0.09);
+  --profile-card-bg: rgba(18, 22, 30, 0.96);
+  --profile-card-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
+  --profile-card-btn-border: rgba(255, 255, 255, 0.14);
+  --profile-card-btn-bg: rgba(19, 23, 31, 0.92);
+  --profile-card-btn-color: #d3d9e3;
+  --profile-card-btn-hover-border: rgba(255, 255, 255, 0.2);
+  --profile-card-btn-hover-bg: rgba(27, 32, 43, 0.96);
+  --profile-card-btn-hover-color: #f2f4f7;
+  --profile-card-btn-hover-inset: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
   --state-unread-fg: #f2f3f5;
   --state-unread-marker: #7b85ff;
   --state-mention-bg: rgba(250, 166, 26, 0.12);
@@ -83,6 +93,37 @@
   --font-display: "Inter", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+}
+
+:root[data-theme="oled-black"] {
+  --color-bg-primary: #0c0d10;
+  --color-bg-secondary: #08090c;
+  --color-bg-tertiary: #050609;
+  --color-bg-elevated: #111317;
+  --color-accent-glow: rgba(88, 101, 242, 0.12);
+  --color-text-primary: #f2f4f7;
+  --color-text-secondary: #c9ced8;
+  --color-text-muted: #7e8795;
+  --app-background: #000000;
+  --app-scrollbar: rgba(88, 94, 106, 0.76);
+  --shadow-ui-sm: 0 14px 32px rgba(0, 0, 0, 0.62);
+  --shadow-ui-md: 0 26px 56px rgba(0, 0, 0, 0.72);
+  --state-hover-bg: #14171d;
+  --state-pressed-bg: #101318;
+  --state-active-bg: #1a1e25;
+  --state-selected-bg: rgba(88, 101, 242, 0.14);
+  --state-focus-ring: rgba(88, 101, 242, 0.34);
+  --state-unread-bg: rgba(88, 101, 242, 0.1);
+  --profile-card-border: rgba(255, 255, 255, 0.1);
+  --profile-card-bg: rgba(8, 9, 12, 0.98);
+  --profile-card-shadow: 0 14px 30px rgba(0, 0, 0, 0.58);
+  --profile-card-btn-border: rgba(255, 255, 255, 0.16);
+  --profile-card-btn-bg: rgba(11, 13, 17, 0.92);
+  --profile-card-btn-color: #d7dce6;
+  --profile-card-btn-hover-border: rgba(255, 255, 255, 0.24);
+  --profile-card-btn-hover-bg: rgba(17, 20, 26, 0.96);
+  --profile-card-btn-hover-color: #f2f4f7;
+  --profile-card-btn-hover-inset: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
 
 * {
@@ -228,13 +269,13 @@ body::before {
 
   .ui-header-bar {
     height: var(--layout-content-header-height);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     background: var(--color-bg-secondary);
     padding: 0 var(--space-4);
   }
 
   .ui-surface {
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 10px;
     background: var(--color-bg-secondary);
     box-shadow: var(--shadow-ui-sm);
@@ -323,7 +364,7 @@ body::before {
   .ui-input {
     height: var(--control-height-md);
     width: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     background: var(--color-bg-tertiary);
     padding: 0 12px;
@@ -401,14 +442,14 @@ body::before {
   }
 
   .ui-btn-secondary {
-    border-color: rgba(255, 255, 255, 0.14);
-    background: rgba(30, 31, 34, 0.9);
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(12, 14, 18, 0.92);
     color: var(--color-text-secondary);
   }
 
   .ui-btn-secondary:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(44, 47, 54, 0.95);
+    border-color: rgba(255, 255, 255, 0.18);
+    background: rgba(19, 22, 28, 0.96);
     color: var(--color-text-primary);
   }
 
@@ -419,28 +460,28 @@ body::before {
   }
 
   .ui-btn-ghost:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
     color: var(--color-text-secondary);
   }
 
   .ui-btn-danger {
-    background: #da373c;
+    background: #cf3f42;
     color: #fff;
   }
 
   .ui-btn-danger:hover {
-    background: #e0484d;
+    background: #e04a4e;
   }
 
   .ui-profile-card {
     position: relative;
     overflow: hidden;
-    border: 1px solid rgba(118, 132, 164, 0.28);
+    border: 1px solid var(--profile-card-border);
     border-radius: 10px;
-    background: rgba(15, 17, 22, 0.98);
+    background: var(--profile-card-bg);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      0 10px 24px rgba(0, 0, 0, 0.42);
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      var(--profile-card-shadow);
     backdrop-filter: blur(8px);
   }
 
@@ -454,45 +495,41 @@ body::before {
   }
 
   .ui-profile-card-btn {
-    border-color: rgba(130, 146, 178, 0.28);
-    background: rgba(16, 20, 28, 0.88);
-    color: #d7deee;
+    border-color: var(--profile-card-btn-border);
+    background: var(--profile-card-btn-bg);
+    color: var(--profile-card-btn-color);
   }
 
   .ui-profile-card-btn:hover {
-    border-color: rgba(166, 184, 222, 0.42);
-    background: rgba(31, 38, 52, 0.96);
-    color: #f2f5ff;
-    box-shadow: 0 0 0 1px rgba(88, 101, 242, 0.18) inset;
+    border-color: var(--profile-card-btn-hover-border);
+    background: var(--profile-card-btn-hover-bg);
+    color: var(--profile-card-btn-hover-color);
+    box-shadow: var(--profile-card-btn-hover-inset);
   }
 
   .popup-overlay {
-    background: rgba(5, 7, 10, 0.78);
+    background: rgba(0, 0, 0, 0.84);
     backdrop-filter: blur(4px);
   }
 
   .popup-surface {
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 14px;
-    background:
-      radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.04), transparent 52%),
-      linear-gradient(180deg, rgba(46, 49, 55, 0.98) 0%, rgba(36, 39, 44, 0.98) 100%);
+    background: rgba(11, 13, 17, 0.98);
     box-shadow:
-      0 22px 56px rgba(0, 0, 0, 0.52),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 26px 58px rgba(0, 0, 0, 0.72),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
       inset 0 -1px 0 rgba(0, 0, 0, 0.2);
     backdrop-filter: blur(9px);
   }
 
   .popup-menu {
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 12px;
-    background:
-      radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.04), transparent 50%),
-      linear-gradient(180deg, rgba(46, 49, 55, 0.98) 0%, rgba(36, 39, 44, 0.98) 100%);
+    background: rgba(11, 13, 17, 0.98);
     box-shadow:
-      0 16px 42px rgba(0, 0, 0, 0.48),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      0 18px 46px rgba(0, 0, 0, 0.62),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
     backdrop-filter: blur(10px);
   }
 
@@ -508,9 +545,9 @@ body::before {
   }
 
   .popup-input {
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    background: rgba(24, 27, 32, 0.92);
+    background: rgba(9, 11, 15, 0.92);
     color: var(--color-text-secondary);
     transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
   }
@@ -523,20 +560,20 @@ body::before {
     outline: none;
     border-color: rgba(111, 124, 255, 0.96);
     box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.22);
-    background: rgba(24, 27, 32, 0.98);
+    background: rgba(11, 14, 18, 0.98);
   }
 
   .popup-btn-primary {
-    border: 1px solid rgba(121, 133, 255, 0.72);
+    border: 1px solid rgba(121, 133, 255, 0.62);
     border-radius: 10px;
-    background: linear-gradient(180deg, #6673f8 0%, #5865f2 100%);
+    background: var(--color-accent-primary);
     color: #ffffff;
     transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
   }
 
   .popup-btn-primary:hover {
-    background: linear-gradient(180deg, #7480fb 0%, #6470f5 100%);
-    border-color: rgba(146, 156, 255, 0.84);
+    background: var(--color-accent-secondary);
+    border-color: rgba(146, 156, 255, 0.72);
   }
 
   .popup-btn-primary:active {
@@ -544,37 +581,35 @@ body::before {
   }
 
   .popup-btn-secondary {
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    background: rgba(28, 31, 37, 0.9);
+    background: rgba(10, 12, 16, 0.9);
     color: var(--color-text-secondary);
     transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
   }
 
   .popup-btn-secondary:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    background: rgba(35, 39, 46, 0.92);
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(16, 19, 25, 0.92);
     color: var(--color-text-primary);
   }
 
   .popup-tooltip {
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    background: rgba(12, 14, 19, 0.9);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48);
+    background: rgba(7, 8, 11, 0.94);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.62);
     backdrop-filter: blur(8px);
     color: var(--color-text-secondary);
   }
 
   .popup-toast {
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 12px;
-    background:
-      radial-gradient(110% 100% at 0% 0%, rgba(255, 255, 255, 0.04), transparent 58%),
-      linear-gradient(180deg, rgba(43, 45, 49, 0.96) 0%, rgba(30, 31, 34, 0.96) 100%);
+    background: rgba(10, 12, 16, 0.97);
     box-shadow:
-      0 14px 32px rgba(0, 0, 0, 0.42),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      0 16px 36px rgba(0, 0, 0, 0.62),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
     backdrop-filter: blur(10px);
   }
 
@@ -598,9 +633,9 @@ body::before {
   .chat-date-divider-label {
     position: relative;
     z-index: 1;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 9999px;
-    background: rgba(28, 31, 37, 0.96);
+    background: rgba(9, 11, 15, 0.96);
     color: var(--color-text-muted);
     padding: 2px 10px;
     font-size: var(--font-size-meta);
@@ -616,7 +651,7 @@ body::before {
 
   .chat-message-row:hover,
   .chat-message-row:focus-within {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.025);
   }
 
   .chat-message-row--unread {
@@ -658,12 +693,12 @@ body::before {
     display: flex;
     align-items: center;
     gap: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    background: linear-gradient(180deg, rgba(36, 39, 46, 0.98) 0%, rgba(27, 30, 36, 0.98) 100%);
+    background: rgba(10, 12, 16, 0.98);
     box-shadow:
-      0 10px 28px rgba(0, 0, 0, 0.42),
-      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      0 14px 30px rgba(0, 0, 0, 0.62),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(8px);
     padding: 4px;
   }
@@ -728,28 +763,28 @@ body::before {
   }
 
   .call-strip-surface {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.35);
-    background: rgba(14, 16, 22, 0.98);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(8, 9, 12, 0.98);
   }
 
   .call-overlay-surface {
-    background: rgba(9, 11, 18, 0.82);
+    background: rgba(5, 6, 9, 0.86);
     backdrop-filter: blur(12px);
   }
 
   .call-mini-player-surface {
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 12px;
-    background: rgba(31, 35, 48, 0.94);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+    background: rgba(10, 12, 16, 0.96);
+    box-shadow: 0 22px 48px rgba(0, 0, 0, 0.66);
     backdrop-filter: blur(10px);
   }
 
   .call-ring-popup {
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 12px;
-    background: rgba(17, 19, 25, 0.94);
-    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.48);
+    background: rgba(8, 9, 12, 0.96);
+    box-shadow: 0 20px 42px rgba(0, 0, 0, 0.68);
     backdrop-filter: blur(10px);
   }
 
@@ -791,8 +826,8 @@ body::before {
     align-items: center;
     gap: 6px;
     border-radius: 9999px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(20, 24, 33, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    background: rgba(11, 13, 18, 0.88);
     color: var(--color-text-secondary);
     font-size: 11px;
     font-weight: 700;
@@ -817,10 +852,10 @@ body::before {
     display: flex;
     align-items: center;
     gap: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: 9999px;
-    background: rgba(18, 21, 31, 0.94);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    background: rgba(8, 10, 14, 0.95);
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.64);
     backdrop-filter: blur(8px);
     padding: 7px 10px;
   }
@@ -949,8 +984,8 @@ body::before {
     gap: 12px;
     min-height: 56px;
     height: 56px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.35);
-    background: rgba(34, 36, 41, 0.94);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(10, 12, 16, 0.95);
     backdrop-filter: blur(8px);
     padding: 0 16px;
   }
@@ -1018,9 +1053,9 @@ body::before {
   }
 
   .dm-call-control-dock {
-    border-color: rgba(255, 255, 255, 0.12);
-    background: rgba(24, 27, 34, 0.95);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
+    border-color: rgba(255, 255, 255, 0.11);
+    background: rgba(9, 11, 15, 0.95);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.62);
     padding: 6px 10px;
     gap: 10px;
   }
@@ -1029,9 +1064,9 @@ body::before {
     width: 40px;
     height: 40px;
     min-width: 40px;
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.09);
     background: var(--color-bg-secondary);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
   .dm-call-control-btn:hover {
@@ -1078,7 +1113,7 @@ body::before {
   }
 
   .voice-join-overlay {
-    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6));
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.78));
     backdrop-filter: blur(4px);
   }
 

@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Suspense, lazy, useEffect, useMemo, useRef } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
-import { useDirectChannelsQuery } from "@/api/queries";
+import { useDirectChannelsQuery, useServersQuery } from "@/api/queries";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { AppLoader } from "@/components/ui/AppLoader";
@@ -62,6 +62,7 @@ const AppShell = () => {
   const location = useLocation();
   const { socket } = useRealtime();
   const { data: directChannels } = useDirectChannelsQuery();
+  const { data: servers } = useServersQuery();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const messagesByChannel = useMessageStore((state) => state.byChannel);
   const isHomeRoute = location.pathname.startsWith("/app/home");
@@ -69,6 +70,7 @@ const AppShell = () => {
   const dmChannelIds = (directChannels ?? [])
     .filter((channel) => channel.type === "dm" || channel.type === "group_dm")
     .map((channel) => channel.id);
+  const serverIds = (servers ?? []).map((server) => server.id);
 
   const taskbarUnreadCount = useMemo(() => {
     if (!currentUserId) {
@@ -114,6 +116,31 @@ const AppShell = () => {
     socket.addEventListener("open", subscribeAllDmChannels, { once: true });
     return () => socket.removeEventListener("open", subscribeAllDmChannels);
   }, [dmChannelIds, socket]);
+
+  useEffect(() => {
+    if (!socket || serverIds.length === 0) {
+      return;
+    }
+
+    const subscribeAllServers = () => {
+      for (const serverId of serverIds) {
+        socket.send(
+          JSON.stringify({
+            t: "SUBSCRIBE_SERVER",
+            d: { server_id: serverId },
+          }),
+        );
+      }
+    };
+
+    if (socket.readyState === WebSocket.OPEN) {
+      subscribeAllServers();
+      return;
+    }
+
+    socket.addEventListener("open", subscribeAllServers, { once: true });
+    return () => socket.removeEventListener("open", subscribeAllServers);
+  }, [serverIds, socket]);
 
   useEffect(() => {
     void window.pawcord.window.setBadgeCount(taskbarUnreadCount);

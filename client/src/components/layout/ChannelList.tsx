@@ -376,9 +376,9 @@ export const ChannelList = ({
           {server?.banner_url ? (
             <img src={server.banner_url} alt={server?.name ?? "Server"} className="h-full w-full object-cover" />
           ) : (
-            <div className="h-full w-full bg-[radial-gradient(110%_90%_at_10%_10%,rgba(95,120,255,0.35),transparent_55%),radial-gradient(80%_80%_at_100%_0%,rgba(80,220,170,0.24),transparent_60%),linear-gradient(180deg,#1b2234_0%,#131722_100%)]" />
+            <div className="h-full w-full bg-[radial-gradient(110%_90%_at_10%_10%,rgba(255,255,255,0.06),transparent_55%),radial-gradient(80%_80%_at_100%_0%,rgba(255,255,255,0.03),transparent_60%),linear-gradient(180deg,#0f1115_0%,#08090c_100%)]" />
           )}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/50 to-[#11131a]/95" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/62 to-black/92" />
         </div>
 
         <div className="relative flex h-full flex-col justify-end gap-2 px-3 pb-3">
