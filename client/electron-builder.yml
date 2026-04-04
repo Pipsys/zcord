@@ -10,7 +10,7 @@ directories:
 publish:
   provider: github
   owner: Pipsys
-  repo: Pawcord
+  repo: zcord
   releaseType: release
 win:
   icon: icon.ico
