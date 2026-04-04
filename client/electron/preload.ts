@@ -98,6 +98,15 @@ const pawcordApi = {
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url) as Promise<boolean>,
   },
+  invites: {
+    onDeepLinkInvite: (handler: (inviteCode: string) => void) => {
+      const listener = (_event: unknown, inviteCode: string) => {
+        handler(inviteCode);
+      };
+      ipcRenderer.on("deep-link:invite", listener);
+      return () => ipcRenderer.removeListener("deep-link:invite", listener);
+    },
+  },
   media: {
     listScreenSources: () => ipcRenderer.invoke("screen-share:list-sources") as Promise<ScreenShareSourcePayload[]>,
     selectScreenSource: (sourceId: string | null) => ipcRenderer.invoke("screen-share:select-source", sourceId) as Promise<boolean>,

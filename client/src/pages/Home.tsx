@@ -9,6 +9,7 @@ import {
   useCreateServerMutation,
   useFriendsQuery,
   useJoinServerMutation,
+  useJoinServerByInviteMutation,
   useMeQuery,
   useMessagesQuery,
   useOpenDirectMessageMutation,
@@ -42,6 +43,74 @@ import {
 import type { Channel, FriendRelation, FriendStatus, Message } from "@/types";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuidLoosePattern = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+const inviteCodePattern = /^[A-Za-z0-9_-]{8,64}$/;
+const serverSearchParamCandidates = ["server", "server_id", "serverId", "id"] as const;
+const inviteSearchParamCandidates = ["invite", "invite_code", "inviteCode", "code"] as const;
+const PENDING_SERVER_INVITE_STORAGE_KEY = "zcord.pending-server-invite";
+
+type JoinServerTarget = { serverId: string | null; inviteCode: string | null };
+
+const normalizeInviteCode = (value: string): string | null => {
+  const trimmed = value.trim();
+  return inviteCodePattern.test(trimmed) ? trimmed : null;
+};
+
+const extractJoinServerTarget = (rawValue: string): JoinServerTarget => {
+  const value = rawValue.trim();
+  if (!value) {
+    return { serverId: null, inviteCode: null };
+  }
+
+  if (uuidPattern.test(value)) {
+    return { serverId: value, inviteCode: null };
+  }
+
+  const inviteCodeCandidate = normalizeInviteCode(value);
+  if (inviteCodeCandidate) {
+    return { serverId: null, inviteCode: inviteCodeCandidate };
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    for (const key of serverSearchParamCandidates) {
+      const candidate = parsedUrl.searchParams.get(key)?.trim();
+      if (candidate && uuidPattern.test(candidate)) {
+        return { serverId: candidate, inviteCode: null };
+      }
+    }
+    for (const key of inviteSearchParamCandidates) {
+      const candidate = parsedUrl.searchParams.get(key)?.trim();
+      const normalized = candidate ? normalizeInviteCode(candidate) : null;
+      if (normalized) {
+        return { serverId: null, inviteCode: normalized };
+      }
+    }
+
+    const segments = parsedUrl.pathname.split("/").map((item) => item.trim()).filter((item) => item.length > 0);
+    const inviteIndex = segments.findIndex((segment) => segment.toLowerCase() === "invite");
+    if (inviteIndex >= 0 && segments[inviteIndex + 1]) {
+      const normalized = normalizeInviteCode(decodeURIComponent(segments[inviteIndex + 1]));
+      if (normalized) {
+        return { serverId: null, inviteCode: normalized };
+      }
+    }
+
+    const pathMatch = parsedUrl.pathname.match(uuidLoosePattern);
+    if (pathMatch?.[0] && uuidPattern.test(pathMatch[0])) {
+      return { serverId: pathMatch[0], inviteCode: null };
+    }
+  } catch {
+    // Not a URL, continue with loose UUID search.
+  }
+
+  const looseMatch = value.match(uuidLoosePattern);
+  if (looseMatch?.[0]) {
+    return { serverId: looseMatch[0], inviteCode: null };
+  }
+
+  return { serverId: null, inviteCode: null };
+};
 
 type FriendTab = "online" | "all" | "add";
 type DmCallStage = "outgoing-ringing" | "incoming-ringing" | "connecting" | "connected";
@@ -261,6 +330,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
   const knownLastMessageByChannelRef = useRef<Record<string, string>>({});
   const prefetchedChannelIdsRef = useRef<Set<string>>(new Set());
   const lastReadAckByChannelRef = useRef<Record<string, string>>({});
+  const processedAutoJoinInviteRef = useRef<string | null>(null);
 
   const [incomingCallInvite, setIncomingCallInvite] = useState<IncomingDmCallInvite | null>(null);
   const [activeDmCall, setActiveDmCall] = useState<ActiveDmCall | null>(null);
@@ -305,6 +375,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
   const createServer = useCreateServerMutation();
   const createChannel = useCreateChannelMutation();
   const joinServer = useJoinServerMutation();
+  const joinServerByInvite = useJoinServerByInviteMutation();
   const sendFriendRequest = useSendFriendRequestMutation();
   const updateFriendRequest = useUpdateFriendRequestMutation();
   const openDirectMessage = useOpenDirectMessageMutation();
@@ -318,6 +389,42 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
       setServers(serverData);
     }
   }, [serverData, setServers]);
+
+  useEffect(() => {
+    if (!isRouteActive || typeof window === "undefined") {
+      return;
+    }
+
+    let rawInviteCode: string | null = null;
+    try {
+      rawInviteCode = window.sessionStorage.getItem(PENDING_SERVER_INVITE_STORAGE_KEY);
+    } catch {
+      rawInviteCode = null;
+    }
+
+    const inviteCode = rawInviteCode ? normalizeInviteCode(rawInviteCode) : null;
+    if (!inviteCode || processedAutoJoinInviteRef.current === inviteCode) {
+      return;
+    }
+
+    processedAutoJoinInviteRef.current = inviteCode;
+    try {
+      window.sessionStorage.removeItem(PENDING_SERVER_INVITE_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors.
+    }
+
+    void (async () => {
+      try {
+        const server = await joinServerByInvite.mutateAsync({ inviteCode });
+        setActiveServer(server.id);
+        pushToast(t("home.join_server_success"), server.name);
+        navigate(`/app/server/${server.id}`);
+      } catch (error) {
+        pushToast(t("home.join_server_failed"), error instanceof Error ? error.message : t("common.unknown_error"));
+      }
+    })();
+  }, [isRouteActive, joinServerByInvite, navigate, pushToast, setActiveServer, t]);
 
   useEffect(() => {
     if (selectedDm?.channelId && dmMessages) {
@@ -1596,14 +1703,16 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
 
   const handleJoinServer = async (event: FormEvent) => {
     event.preventDefault();
-    const serverId = joinServerId.trim();
-    if (!uuidPattern.test(serverId)) {
-      pushToast(t("home.join_server_failed"), t("home.invalid_uuid"));
+    const target = extractJoinServerTarget(joinServerId);
+    if (!target.serverId && !target.inviteCode) {
+      pushToast(t("home.join_server_failed"), t("home.invalid_server_invite"));
       return;
     }
 
     try {
-      const server = await joinServer.mutateAsync({ serverId });
+      const server = target.serverId
+        ? await joinServer.mutateAsync({ serverId: target.serverId })
+        : await joinServerByInvite.mutateAsync({ inviteCode: target.inviteCode as string });
       setJoinServerId("");
       setActiveServer(server.id);
       pushToast(t("home.join_server_success"), server.name);
@@ -2367,10 +2476,10 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                   <Input
                     value={joinServerId}
                     onChange={(event) => setJoinServerId(event.target.value)}
-                    placeholder={t("home.friend_id_placeholder")}
+                    placeholder={t("home.server_invite_placeholder")}
                     className="h-9"
                   />
-                  <Button type="submit" className="w-full" disabled={joinServer.isPending}>
+                  <Button type="submit" className="w-full" disabled={joinServer.isPending || joinServerByInvite.isPending}>
                     {t("home.join_server_button")}
                   </Button>
                 </form>

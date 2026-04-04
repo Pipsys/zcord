@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -10,9 +11,12 @@ from app.database import get_session
 from app.models.member import Member, MemberRole
 from app.models.role import Role
 from app.models.server import Server
+from app.models.server_invite import ServerInvite
 from app.models.user import User
 from app.routers.deps import get_current_user
+from app.schemas.invite import ServerInviteCreate, ServerInviteRead
 from app.schemas.server import ServerCreate, ServerMemberRead, ServerRead, ServerUpdate
+from app.services.invite_service import build_public_invite_url, generate_invite_code, utcnow
 from app.services.media_service import MediaService
 from app.services.permission_service import Permission
 from app.services.presence_service import PresenceSnapshot, get_presence_map, was_recently_online
@@ -117,6 +121,59 @@ async def join_server(
         await session.refresh(server)
 
     return _serialize_server(server, media_service)
+
+
+@router.post("/{server_id}/invites", response_model=ServerInviteRead, status_code=status.HTTP_201_CREATED)
+async def create_server_invite(
+    server_id: UUID,
+    payload: ServerInviteCreate | None = None,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    server = await session.get(Server, server_id)
+    if server is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+
+    membership = await session.get(Member, {"server_id": server_id, "user_id": current_user.id})
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a server member")
+
+    effective_payload = payload or ServerInviteCreate()
+
+    code: str | None = None
+    for _ in range(8):
+        candidate = generate_invite_code()
+        existing = await session.get(ServerInvite, candidate)
+        if existing is None:
+            code = candidate
+            break
+    if code is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Invite generation failed")
+
+    now = utcnow()
+    invite = ServerInvite(
+        code=code,
+        server_id=server_id,
+        created_by=current_user.id,
+        expires_at=now + timedelta(hours=effective_payload.expires_in_hours),
+        max_uses=effective_payload.max_uses,
+        uses_count=0,
+    )
+    session.add(invite)
+    await session.commit()
+    await session.refresh(invite)
+
+    return ServerInviteRead.model_validate(
+        {
+            "code": invite.code,
+            "server_id": invite.server_id,
+            "invite_url": build_public_invite_url(invite.code),
+            "expires_at": invite.expires_at,
+            "max_uses": invite.max_uses,
+            "uses_count": invite.uses_count,
+            "created_at": invite.created_at,
+        }
+    )
 
 
 @router.get("/{server_id}/members", response_model=list[ServerMemberRead])

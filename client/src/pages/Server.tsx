@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import {
   useChannelsQuery,
+  useCreateServerInviteMutation,
   useCreateChannelMutation,
   useCreateMessageMutation,
   useDeleteServerIconMutation,
@@ -126,6 +127,7 @@ const ServerPage = () => {
   );
 
   const createMessage = useCreateMessageMutation();
+  const createServerInvite = useCreateServerInviteMutation();
   const uploadAttachments = useUploadAttachmentsMutation();
   const updateMessage = useUpdateMessageMutation();
   const deleteMessage = useDeleteMessageMutation();
@@ -417,9 +419,23 @@ const ServerPage = () => {
       return;
     }
 
+    let inviteLink: string;
+    try {
+      const createdInvite = await createServerInvite.mutateAsync({ serverId });
+      const normalized = createdInvite.invite_url?.trim();
+      if (!normalized) {
+        pushToast(t("server.invite_copy_failed"), t("server.invite_generate_failed"));
+        return;
+      }
+      inviteLink = normalized;
+    } catch {
+      pushToast(t("server.invite_copy_failed"), t("server.invite_generate_failed"));
+      return;
+    }
+
     const inviteText = t("server.invite_payload", {
       name: currentServer?.name ?? "Server",
-      id: serverId,
+      link: inviteLink,
     });
 
     try {

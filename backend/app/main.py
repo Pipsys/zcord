@@ -11,7 +11,7 @@ from app.middleware.cors import setup_cors
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import problem_details_exception_handler, setup_rate_limiter
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import auth, channels, friends, media, messages, servers, users
+from app.routers import auth, channels, friends, invites, media, messages, servers, users
 from app.websocket.events import GatewayEventType
 from app.websocket.handlers import authenticate_websocket_token, handle_client_event, rate_limiter
 from app.websocket.manager import manager
@@ -95,6 +95,7 @@ app.include_router(servers.router, prefix=settings.api_prefix)
 app.include_router(channels.router, prefix=settings.api_prefix)
 app.include_router(messages.router, prefix=settings.api_prefix)
 app.include_router(friends.router, prefix=settings.api_prefix)
+app.include_router(invites.router, prefix=settings.api_prefix)
 app.include_router(media.router, prefix=settings.api_prefix)
 
 

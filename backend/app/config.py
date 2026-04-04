@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     debug: bool = False
     api_prefix: str = "/api/v1"
     public_api_base_url: str | None = None
+    invite_public_origin: str | None = "https://pawcord.ru"
 
     database_url: str = "postgresql+asyncpg://pawcord:pawcord@localhost:5432/pawcord"
     redis_url: str = "redis://:REDIS_SECRET_REMOVED@localhost:6379/0"
@@ -59,6 +60,7 @@ class Settings(BaseSettings):
     auth_rate_limit: str = "5/second"
     default_rate_limit: str = "30/second"
     websocket_event_limit_per_second: int = 100
+    websocket_voice_signal_limit_per_second: int = 400
 
     presence_ttl_seconds: int = 45
     presence_recently_seconds: int = 900

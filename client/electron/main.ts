@@ -23,6 +23,9 @@ const BACKEND_CERT_FINGERPRINT = process.env.BACKEND_CERT_FINGERPRINT ?? "";
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const PROD_DEFAULT_DOMAIN = "api.pawcord.ru";
 const PROD_DEFAULT_API_URL = `https://${PROD_DEFAULT_DOMAIN}/api/v1`;
+const DEEP_LINK_PROTOCOL = "zcord";
+const INVITE_CODE_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+let pendingDeepLinkInviteCode: string | null = null;
 
 const toByteArray = (value: unknown): Uint8Array => {
   if (value instanceof ArrayBuffer) {
@@ -97,6 +100,115 @@ const isExternalHttpUrl = (value: string): boolean => {
     return false;
   }
 };
+
+const normalizeInviteCode = (value: string): string | null => {
+  const candidate = value.trim();
+  if (!INVITE_CODE_PATTERN.test(candidate)) {
+    return null;
+  }
+  return candidate;
+};
+
+const extractInviteCodeFromDeepLink = (rawUrl: string): string | null => {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== `${DEEP_LINK_PROTOCOL}:`) {
+      return null;
+    }
+
+    const host = parsed.hostname.trim().toLowerCase();
+    const segments = parsed.pathname.split("/").map((item) => item.trim()).filter((item) => item.length > 0);
+    if (host === "invite" && segments[0]) {
+      return normalizeInviteCode(decodeURIComponent(segments[0]));
+    }
+
+    const inviteIndex = segments.findIndex((segment) => segment.toLowerCase() === "invite");
+    if (inviteIndex >= 0 && segments[inviteIndex + 1]) {
+      return normalizeInviteCode(decodeURIComponent(segments[inviteIndex + 1]));
+    }
+
+    const byQuery = parsed.searchParams.get("code") ?? parsed.searchParams.get("invite");
+    if (byQuery) {
+      return normalizeInviteCode(byQuery);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const extractInviteCodeFromArgv = (argv: string[]): string | null => {
+  for (const value of argv) {
+    if (!value || !value.startsWith(`${DEEP_LINK_PROTOCOL}://`)) {
+      continue;
+    }
+    const inviteCode = extractInviteCodeFromDeepLink(value);
+    if (inviteCode) {
+      return inviteCode;
+    }
+  }
+  return null;
+};
+
+const focusMainWindow = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.focus();
+};
+
+const emitInviteCodeToRenderer = (inviteCode: string) => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingDeepLinkInviteCode = inviteCode;
+    return;
+  }
+  mainWindow.webContents.send("deep-link:invite", inviteCode);
+};
+
+const registerDeepLinkProtocol = () => {
+  if (process.defaultApp) {
+    const appEntry = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
+    if (appEntry) {
+      app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL, process.execPath, [appEntry]);
+      return;
+    }
+  }
+  app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+};
+
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+}
+
+if (process.platform !== "darwin") {
+  pendingDeepLinkInviteCode = extractInviteCodeFromArgv(process.argv);
+}
+
+app.on("second-instance", (_event, argv) => {
+  const inviteCode = extractInviteCodeFromArgv(argv);
+  if (inviteCode) {
+    pendingDeepLinkInviteCode = inviteCode;
+  }
+  focusMainWindow();
+  if (pendingDeepLinkInviteCode) {
+    emitInviteCodeToRenderer(pendingDeepLinkInviteCode);
+  }
+});
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  const inviteCode = extractInviteCodeFromDeepLink(url);
+  if (!inviteCode) {
+    return;
+  }
+  pendingDeepLinkInviteCode = inviteCode;
+  focusMainWindow();
+  emitInviteCodeToRenderer(inviteCode);
+});
 
 const hasSameOrigin = (left: string, right: string): boolean => {
   try {
@@ -480,6 +592,10 @@ const createWindow = async (): Promise<void> => {
 
   mainWindow.webContents.on("did-finish-load", () => {
     console.info("[renderer] did-finish-load");
+    if (pendingDeepLinkInviteCode) {
+      mainWindow?.webContents.send("deep-link:invite", pendingDeepLinkInviteCode);
+      pendingDeepLinkInviteCode = null;
+    }
   });
 
   mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
@@ -538,6 +654,7 @@ app.on("certificate-error", (event, _webContents, _url, _error, certificate, cal
 });
 
 app.whenReady().then(async () => {
+  registerDeepLinkProtocol();
   await createWindow();
 
   app.on("activate", async () => {

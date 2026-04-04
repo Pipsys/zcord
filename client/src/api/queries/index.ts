@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, get, patch, post, uploadAttachments, uploadServerBanner, uploadServerIcon } from "@/api/client";
 import type { UploadProgressEvent } from "@/api/client";
-import type { Channel, FriendRelation, Message, Server, ServerMember, User } from "@/types";
+import type { Channel, FriendRelation, Message, Server, ServerInvite, ServerMember, User } from "@/types";
 
 export const useMeQuery = () => useQuery({ queryKey: ["me"], queryFn: () => get<User>("/users/me") });
 
@@ -132,6 +132,26 @@ export const useJoinServerMutation = () => {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["servers"] });
     },
+  });
+};
+
+export const useJoinServerByInviteMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { inviteCode: string }) => post<Server>(`/invites/${encodeURIComponent(payload.inviteCode)}/join`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+    },
+  });
+};
+
+export const useCreateServerInviteMutation = () => {
+  return useMutation({
+    mutationFn: (payload: { serverId: string; expiresInHours?: number; maxUses?: number | null }) =>
+      post<ServerInvite>(`/servers/${payload.serverId}/invites`, {
+        expires_in_hours: payload.expiresInHours ?? 24,
+        max_uses: payload.maxUses ?? 10,
+      }),
   });
 };
 

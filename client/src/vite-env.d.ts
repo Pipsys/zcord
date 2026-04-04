@@ -82,6 +82,9 @@ interface PawcordBridge {
   shell: {
     openExternal: (url: string) => Promise<boolean>;
   };
+  invites: {
+    onDeepLinkInvite: (handler: (inviteCode: string) => void) => () => void;
+  };
   media: {
     listScreenSources: () => Promise<ScreenShareSource[]>;
     selectScreenSource: (sourceId: string | null) => Promise<boolean>;

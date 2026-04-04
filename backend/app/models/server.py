@@ -26,3 +26,4 @@ class Server(Base):
     channels = relationship("Channel", back_populates="server", cascade="all,delete")
     roles = relationship("Role", back_populates="server", cascade="all,delete")
     members = relationship("Member", back_populates="server", cascade="all,delete")
+    invites = relationship("ServerInvite", back_populates="server", cascade="all,delete")

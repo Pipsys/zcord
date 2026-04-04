@@ -12,6 +12,10 @@ publish:
   owner: Pipsys
   repo: zcord
   releaseType: release
+protocols:
+  - name: zcord Invite Links
+    schemes:
+      - zcord
 win:
   icon: icon.ico
   target:

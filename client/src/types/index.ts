@@ -41,6 +41,16 @@ export interface ServerMember {
   joined_at: string;
 }
 
+export interface ServerInvite {
+  code: string;
+  server_id: string;
+  invite_url: string;
+  expires_at: string | null;
+  max_uses: number | null;
+  uses_count: number;
+  created_at: string;
+}
+
 export interface Channel {
   id: string;
   server_id: string | null;

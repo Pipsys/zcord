@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Suspense, lazy, useEffect, useMemo, useRef } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { useDirectChannelsQuery, useServersQuery } from "@/api/queries";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -28,6 +28,8 @@ const contentTransition = {
   duration: 0.16,
   ease: [0.2, 0, 0, 1],
 } as const;
+
+const PENDING_SERVER_INVITE_STORAGE_KEY = "zcord.pending-server-invite";
 
 const resolveAppContentKey = (pathname: string): string => {
   if (pathname.startsWith("/app/server/")) {
@@ -60,6 +62,7 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
 const AppShell = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { socket } = useRealtime();
   const { data: directChannels } = useDirectChannelsQuery();
   const { data: servers } = useServersQuery();
@@ -152,6 +155,22 @@ const AppShell = () => {
     },
     [],
   );
+
+  useEffect(() => {
+    const unsubscribe = window.pawcord.invites.onDeepLinkInvite((inviteCode) => {
+      const normalized = inviteCode.trim();
+      if (!normalized) {
+        return;
+      }
+      try {
+        window.sessionStorage.setItem(PENDING_SERVER_INVITE_STORAGE_KEY, normalized);
+      } catch {
+        // Ignore storage errors.
+      }
+      navigate("/app/home");
+    });
+    return unsubscribe;
+  }, [navigate]);
 
   return (
     <ProtectedRoute>

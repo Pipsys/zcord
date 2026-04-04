@@ -5,6 +5,7 @@ from app.models.member import Member, MemberRole
 from app.models.message import Message, MessageReceipt, MessageType, Reaction
 from app.models.role import Role
 from app.models.server import Server
+from app.models.server_invite import ServerInvite
 from app.models.user import User, UserStatus
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "RefreshToken",
     "Role",
     "Server",
+    "ServerInvite",
     "User",
     "UserStatus",
 ]
