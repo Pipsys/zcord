@@ -14,16 +14,18 @@ interface WindowControlButtonProps {
   onClick: () => void;
   children: ReactNode;
   danger?: boolean;
+  className?: string;
 }
 
-const WindowControlButton = ({ title, onClick, children, danger = false }: WindowControlButtonProps) => (
+const WindowControlButton = ({ title, onClick, children, danger = false, className }: WindowControlButtonProps) => (
   <button
     type="button"
     title={title}
     onClick={onClick}
     className={clsx(
-      "grid h-7 w-8 place-items-center rounded-md border border-transparent text-paw-text-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35",
+      "titlebar-window-btn grid h-7 w-8 place-items-center rounded-md border border-transparent text-paw-text-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35",
       danger ? "hover:bg-[#da373c] hover:text-white active:bg-[#c5353a]" : "hover:bg-white/10 hover:text-paw-text-secondary active:bg-white/15",
+      className,
     )}
   >
     {children}
@@ -70,7 +72,7 @@ export const TitleBar = () => {
   return (
     <header
       className={clsx(
-        "drag-region relative flex items-center justify-between border-b border-black/35",
+        "app-titlebar drag-region relative flex items-center justify-between border-b border-black/35",
         "h-[var(--layout-titlebar-height)] bg-paw-bg-secondary px-3",
       )}
     >
@@ -83,10 +85,10 @@ export const TitleBar = () => {
 
       <div className={clsx("no-drag-region flex items-center", isMac ? "gap-2" : "gap-1")}>
         {voiceRoom.connectedChannelId ? (
-          <div className="hidden max-w-[260px] items-center gap-2 rounded-md border border-[#248046]/35 bg-[#1a2d1f] px-2.5 py-1 sm:flex">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#23a55a]" />
-            <span className="truncate text-[12px] font-semibold leading-4 text-[#8ee6a8]">{connectedVoiceChannel?.name ? `#${connectedVoiceChannel.name}` : t("voice.connected")}</span>
-            <span className="text-[11px] leading-4 text-paw-text-muted">
+          <div className="titlebar-voice-chip hidden max-w-[260px] items-center gap-2 rounded-md border border-[#5865f2]/35 bg-[#1b2040] px-2.5 py-1 sm:flex">
+            <span className="titlebar-voice-dot h-1.5 w-1.5 shrink-0 rounded-full bg-[#5865f2]" />
+            <span className="titlebar-voice-name truncate text-[12px] font-semibold leading-4 text-[#cfd4ff]">{connectedVoiceChannel?.name ? `#${connectedVoiceChannel.name}` : t("voice.connected")}</span>
+            <span className="titlebar-voice-latency text-[11px] leading-4 text-paw-text-muted">
               {gatewayStatus === "connected" && gatewayLatencyMs !== null ? `${Math.round(gatewayLatencyMs)}ms` : gatewayStatus}
             </span>
           </div>
@@ -96,19 +98,19 @@ export const TitleBar = () => {
 
         {!isMac ? (
           <>
-            <WindowControlButton title={t("window.minimize")} onClick={() => void window.pawcord.window.minimize()}>
+            <WindowControlButton title={t("window.minimize")} onClick={() => void window.pawcord.window.minimize()} className="titlebar-window-btn--minimize">
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
                 <path d="M3 8.5H13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
             </WindowControlButton>
 
-            <WindowControlButton title={t("window.maximize")} onClick={() => void window.pawcord.window.maximize()}>
+            <WindowControlButton title={t("window.maximize")} onClick={() => void window.pawcord.window.maximize()} className="titlebar-window-btn--maximize">
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
                 <rect x="3.2" y="3.2" width="9.6" height="9.6" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
               </svg>
             </WindowControlButton>
 
-            <WindowControlButton title={t("window.close")} onClick={() => void window.pawcord.window.close()} danger>
+            <WindowControlButton title={t("window.close")} onClick={() => void window.pawcord.window.close()} danger className="titlebar-window-btn--close">
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden>
                 <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
               </svg>

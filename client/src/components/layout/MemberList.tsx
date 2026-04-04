@@ -69,7 +69,7 @@ export const MemberList = () => {
   }, [serverMembers, t, voiceStateByUserId]);
 
   return (
-    <aside className="hidden h-full w-[var(--layout-member-list-width)] border-l border-black/35 bg-paw-bg-secondary px-2 py-3 xl:block">
+    <aside className="member-list-panel hidden h-full w-[var(--layout-member-list-width)] border-l border-black/35 bg-paw-bg-secondary px-2 py-3 xl:block">
       <h3 className="typo-meta mb-3 px-2 font-semibold uppercase tracking-[0.04em]">{t("members.title")}</h3>
 
       {members.length === 0 ? <p className="px-2 text-xs text-paw-text-muted">{t("members.none")}</p> : null}
@@ -80,7 +80,7 @@ export const MemberList = () => {
           return (
             <div
               key={member.id}
-              className={`relative flex h-9 items-center gap-2 rounded-md border border-transparent px-2 transition-colors hover:border-white/10 hover:bg-[#1f2229] ${rowStateClass}`}
+              className={`member-list-row relative flex h-9 items-center gap-2 rounded-md border border-transparent px-2 transition-colors hover:border-white/10 hover:bg-[#1f2229] ${rowStateClass}`}
             >
               {member.screenSharing ? <span className="absolute bottom-1 left-0 top-1 w-0.5 rounded-r bg-[#f0b232]" /> : null}
               {!member.screenSharing && member.inVoice ? <span className="absolute bottom-1 left-0 top-1 w-0.5 rounded-r bg-[#7b85ff]" /> : null}

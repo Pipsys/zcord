@@ -272,7 +272,7 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
             {referencedMessage ? (
               <button
                 type="button"
-                className={`mt-1 block max-w-[680px] rounded-md border-l-2 border-paw-accent/60 bg-white/[0.02] px-2 py-1 text-left ${showAuthor ? "" : "mt-0.5"}`}
+                className={`message-ref-card mt-1 block max-w-[680px] rounded-md border-l-2 border-paw-accent/60 bg-white/[0.02] px-2 py-1 text-left ${showAuthor ? "" : "mt-0.5"}`}
                 onClick={() => onReply?.(referencedMessage)}
               >
                 <p className="typo-meta truncate font-semibold text-paw-text-secondary">{referencedAuthor}</p>
@@ -286,7 +286,7 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
               </p>
             ) : null}
 
-            {parsed.code ? <pre className="mt-1 overflow-auto rounded-lg bg-black/45 p-2.5 font-mono text-xs text-paw-text-primary">{parsed.code}</pre> : null}
+            {parsed.code ? <pre className="message-code-block mt-1 overflow-auto rounded-lg bg-black/45 p-2.5 font-mono text-xs text-paw-text-primary">{parsed.code}</pre> : null}
 
             {attachments.length > 0 ? (
               <div className="mt-2 space-y-2">
@@ -301,7 +301,7 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                       <button
                         key={attachment.id}
                         type="button"
-                        className="block max-w-full cursor-zoom-in overflow-hidden rounded-xl bg-black/35 p-0"
+                        className="message-attachment-image-wrap block max-w-full cursor-zoom-in overflow-hidden rounded-xl bg-black/35 p-0"
                         style={{ width: "min(420px, 100%)" }}
                         onClick={() => setPreviewImage({ url: attachment.download_url, filename: attachment.filename })}
                         title={t("message.image_open")}
@@ -323,7 +323,7 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                         key={attachment.id}
                         controls
                         preload="metadata"
-                        className="max-h-80 max-w-full rounded-xl bg-black/35"
+                        className="message-attachment-video max-h-80 max-w-full rounded-xl bg-black/35"
                         style={{ width: "min(420px, 100%)" }}
                         src={attachment.download_url}
                       />
@@ -342,7 +342,7 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                       target="_blank"
                       rel="noreferrer"
                       onClick={(event) => openExternalLink(event, asDownloadHref(attachment.download_url))}
-                      className="flex min-w-[220px] max-w-[420px] items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2 hover:bg-white/10"
+                      className="message-attachment-file flex min-w-[220px] max-w-[420px] items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2 hover:bg-white/10"
                     >
                       <div className="min-w-0">
                         <p className="typo-body truncate font-medium text-paw-text-secondary">{attachment.filename}</p>
@@ -403,9 +403,9 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
 
       {previewImage && popupRoot
         ? createPortal(
-            <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
+            <div className="message-preview-overlay fixed inset-0 z-[300] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
               <div
-                className="flex w-full max-w-5xl flex-col rounded-2xl bg-[#0a0d13] p-3 shadow-2xl shadow-black/70"
+                className="message-preview-surface flex w-full max-w-5xl flex-col rounded-2xl bg-[#0a0d13] p-3 shadow-2xl shadow-black/70"
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -417,13 +417,13 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                       target="_blank"
                       rel="noreferrer"
                       onClick={(event) => openExternalLink(event, asDownloadHref(previewImage.url))}
-                      className="inline-flex items-center rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-paw-text-secondary transition hover:bg-white/15"
+                      className="message-preview-btn inline-flex items-center rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-paw-text-secondary transition hover:bg-white/15"
                     >
                       {t("message.image_download")}
                     </a>
                     <button
                       type="button"
-                      className="inline-flex items-center rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-paw-text-secondary transition hover:bg-white/15"
+                      className="message-preview-btn inline-flex items-center rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-paw-text-secondary transition hover:bg-white/15"
                       onClick={() => setPreviewImage(null)}
                     >
                       {t("message.image_preview_close")}
@@ -431,7 +431,7 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                   </div>
                 </div>
 
-                <div className="min-h-0 max-h-[82vh] overflow-auto rounded-xl bg-black/35 p-2">
+                <div className="message-preview-image-wrap min-h-0 max-h-[82vh] overflow-auto rounded-xl bg-black/35 p-2">
                   <img src={previewImage.url} alt={previewImage.filename} className="mx-auto block h-auto max-h-[78vh] w-auto max-w-full object-contain" />
                 </div>
               </div>

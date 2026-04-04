@@ -370,8 +370,8 @@ export const ChannelList = ({
   };
 
   return (
-    <section className="relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary" style={{ width: `${panelWidth}px` }}>
-      <header className="relative h-[var(--layout-server-hero-height)] overflow-hidden border-b border-black/35 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
+    <section className="channel-list-panel relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary" style={{ width: `${panelWidth}px` }}>
+      <header className="channel-list-hero relative h-[var(--layout-server-hero-height)] overflow-hidden border-b border-black/35 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
         <div className="absolute inset-0">
           {server?.banner_url ? (
             <img src={server.banner_url} alt={server?.name ?? "Server"} className="h-full w-full object-cover" />
@@ -524,7 +524,7 @@ export const ChannelList = ({
         </div>
       </div>
 
-      <footer className="border-t border-black/35 bg-paw-bg-elevated px-2 py-2">
+      <footer className="channel-list-footer border-t border-black/35 bg-paw-bg-elevated px-2 py-2">
         {connectedVoiceChannelId ? (
           <div
             className={`mb-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2 ${
@@ -589,7 +589,7 @@ export const ChannelList = ({
         aria-orientation="vertical"
         aria-label="Resize channels panel"
         onPointerDown={startResize}
-        className="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-white/10"
+        className="channel-list-resizer absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-white/10"
       />
     </section>
   );

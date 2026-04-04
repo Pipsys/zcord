@@ -1959,8 +1959,8 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
   return (
     <>
       {isRouteActive ? (
-        <div className="flex h-full overflow-hidden bg-paw-bg-primary">
-      <aside className="relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary p-2" style={{ width: `${panelWidth}px` }}>
+        <div className="home-layout flex h-full overflow-hidden bg-paw-bg-primary">
+      <aside className="home-dm-sidebar relative flex h-full shrink-0 flex-col border-r border-black/35 bg-paw-bg-secondary p-2" style={{ width: `${panelWidth}px` }}>
         <div className="mb-2 space-y-1 px-1">
           <button
             type="button"
@@ -2029,7 +2029,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
             return (
               <button
                 key={`${relation.requester_id}:${relation.addressee_id}`}
-                className={`ui-focus-ring ui-state-pressed group relative w-full overflow-hidden rounded-lg border px-2.5 py-2 text-left transition-colors duration-150 ${rowStateClass} ${
+                className={`home-dm-item ui-focus-ring ui-state-pressed group relative w-full overflow-hidden rounded-lg border px-2.5 py-2 text-left transition-colors duration-150 ${rowStateClass} ${
                   active
                     ? "border-white/20 bg-[var(--state-active-bg)] text-paw-text-primary"
                     : "border-transparent text-paw-text-secondary hover:bg-[var(--state-hover-bg)]"
@@ -2048,7 +2048,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                         {active ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/85" /> : null}
                       </div>
                       {unreadCount > 0 ? (
-                        <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-paw-accent px-2 text-xs font-bold leading-none text-white shadow-[0_0_0_2px_rgba(15,18,26,0.9)]">
+                        <span className="home-dm-unread-badge inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-paw-accent px-2 text-xs font-bold leading-none text-white shadow-[0_0_0_2px_rgba(15,18,26,0.9)]">
                           {unreadLabel}
                         </span>
                       ) : null}
@@ -2062,11 +2062,11 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
         </div>
 
         {voiceRoom.connectedChannelId ? (
-          <div className="mt-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2">
+          <div className="home-voice-card mt-2 rounded-lg border border-[#248046]/35 bg-[#1a2d1f] px-2 py-2">
             <div className="flex items-center justify-between gap-2">
               <p className="typo-meta truncate font-semibold text-[#8ee6a8]">{t("voice.connected")}</p>
               <span
-                className={`rounded-full border px-2 py-0.5 typo-meta font-semibold uppercase tracking-wide ${
+                className={`home-voice-status-pill rounded-full border px-2 py-0.5 typo-meta font-semibold uppercase tracking-wide ${
                   gatewayStatus === "connected"
                     ? "border-[#248046]/35 bg-[#248046]/25 text-[#8ee6a8]"
                     : gatewayStatus === "reconnecting" || gatewayStatus === "connecting"
@@ -2088,7 +2088,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
               <button
                 type="button"
                 onClick={() => void voiceRoom.leave()}
-                className="rounded-md border border-white/15 bg-[var(--color-bg-tertiary)] px-2 py-0.5 typo-meta font-semibold text-paw-text-secondary transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+                className="home-voice-leave-btn rounded-md border border-white/15 bg-[var(--color-bg-tertiary)] px-2 py-0.5 typo-meta font-semibold text-paw-text-secondary transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-paw-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
               >
                 {t("voice.leave")}
               </button>
@@ -2116,13 +2116,13 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           aria-orientation="vertical"
           aria-label="Resize channels panel"
           onPointerDown={startResize}
-          className="absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-white/10"
+          className="home-dm-sidebar-resizer absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-white/10"
         />
       </aside>
 
       {selectedDm ? (
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="ui-header-bar flex items-center">
+        <section className="home-chat-zone flex min-w-0 flex-1 flex-col">
+          <header className="home-chat-header ui-header-bar flex items-center">
             <div className="flex items-center gap-2">
               <span className="typo-body text-paw-text-muted">@</span>
               <h2 className="typo-title-md">{selectedDm.peerName}</h2>
@@ -2150,7 +2150,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           </header>
 
           {activeDmCallForSelectedChat ? (
-            <div className="call-strip-surface ui-anim-fade border-b border-black/35">
+            <div className="home-call-strip call-strip-surface ui-anim-fade border-b border-black/35">
               <div className="relative h-[240px] overflow-hidden">
                 {activeDmCallBackgroundBanner ? (
                   <img
@@ -2160,7 +2160,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                     className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-30 blur-[1px]"
                   />
                 ) : null}
-                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.46),rgba(0,0,0,0.86))]" />
+                <div className="dm-call-banner-overlay pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.46),rgba(0,0,0,0.86))]" />
                 <div className="call-state-pill call-state-pill--active absolute right-4 top-4 z-[2]">
                   {activeDmCallForSelectedChat.stage === "connected"
                     ? `${t("dm.call_connected")} | ${formatCallDuration(dmCallElapsedSec)}`
@@ -2169,10 +2169,10 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
 
                 <div className="relative z-[1] flex h-full flex-col items-center justify-center pb-14 pt-6">
                   <div className="mb-3 flex items-center gap-3">
-                    <div className="rounded-full border border-white/14 bg-[rgba(9,11,15,0.92)] p-1">
+                    <div className="dm-call-avatar-shell rounded-full border border-white/14 bg-[rgba(9,11,15,0.92)] p-1">
                       <Avatar src={effectiveUser?.avatar_url ?? null} label={effectiveUser?.username ?? "you"} size="lg" online />
                     </div>
-                    <div className="rounded-full border border-white/14 bg-[rgba(9,11,15,0.92)] p-1">
+                    <div className="dm-call-avatar-shell rounded-full border border-white/14 bg-[rgba(9,11,15,0.92)] p-1">
                       <Avatar src={activeDmCallForSelectedChat.peerAvatar} label={activeDmCallForSelectedChat.peerName} size="lg" online />
                     </div>
                   </div>
@@ -2227,7 +2227,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="home-message-list-wrap min-h-0 flex-1 overflow-hidden">
             <MessageList
               channelName={selectedDm.peerName}
               messages={selectedDmMessages}
@@ -2269,8 +2269,8 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           />
         </section>
       ) : (
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="ui-header-bar flex items-center gap-2">
+        <section className="home-friends-zone flex min-w-0 flex-1 flex-col">
+          <header className="home-friends-header ui-header-bar flex items-center gap-2">
             <button
               className={`rounded-md px-3 py-1 typo-body font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 ${
                 tab === "online" ? "bg-[var(--state-active-bg)] text-paw-text-primary" : "text-paw-text-muted hover:bg-[var(--state-hover-bg)]"
@@ -2298,7 +2298,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
           </header>
 
           <div className="flex min-h-0 flex-1">
-            <main className="flex-1 overflow-auto p-4">
+            <main className="home-friends-main flex-1 overflow-auto p-4">
               {isAddTab ? (
                 <section className="ui-surface p-5">
                   <div className="mb-5">
@@ -2319,7 +2319,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                   </form>
 
                   <div className="mt-6 grid gap-4 xl:grid-cols-2">
-                    <section className="ui-surface-elevated rounded-xl border border-white/10 p-4">
+                    <section className="home-requests-card ui-surface-elevated rounded-xl border border-white/10 p-4">
                       <div className="mb-3">
                         <h4 className="typo-body font-semibold text-paw-text-secondary">{t("home.incoming_requests_title")}</h4>
                         <p className="typo-meta mt-1 leading-5">{t("home.incoming_requests_description")}</p>
@@ -2331,7 +2331,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                           const peerName = formatPeerName(relation, currentUserId);
                           const peerAvatar = formatPeerAvatar(relation, currentUserId);
                           return (
-                            <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                            <div key={`${relation.requester_id}:${relation.addressee_id}`} className="home-request-row flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
                               <div className="flex min-w-0 items-center gap-3">
                                 <Avatar src={peerAvatar} label={peerName} size="sm" />
                                 <div className="min-w-0">
@@ -2348,7 +2348,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                       </div>
                     </section>
 
-                    <section className="ui-surface-elevated rounded-xl border border-white/10 p-4">
+                    <section className="home-requests-card ui-surface-elevated rounded-xl border border-white/10 p-4">
                       <div className="mb-3">
                         <h4 className="typo-body font-semibold text-paw-text-secondary">{t("home.outgoing_requests_title")}</h4>
                         <p className="typo-meta mt-1 leading-5">{t("home.outgoing_requests_description")}</p>
@@ -2360,7 +2360,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                           const peerName = formatPeerName(relation, currentUserId);
                           const peerAvatar = formatPeerAvatar(relation, currentUserId);
                           return (
-                            <div key={`${relation.requester_id}:${relation.addressee_id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                            <div key={`${relation.requester_id}:${relation.addressee_id}`} className="home-request-row flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
                               <div className="flex min-w-0 items-center gap-3">
                                 <Avatar src={peerAvatar} label={peerName} size="sm" />
                                 <div className="min-w-0">
@@ -2391,7 +2391,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                     {tab === "online" ? t("home.online_count", { count: onlineFriends.length }) : t("home.all_count", { count: sortedFriends.length })}
                   </p>
 
-                  {filteredFriends.length === 0 ? <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-paw-text-muted">{t("home.no_friends")}</p> : null}
+                  {filteredFriends.length === 0 ? <p className="home-no-friends rounded-lg border border-white/10 bg-white/[0.03] px-3 py-4 text-sm text-paw-text-muted">{t("home.no_friends")}</p> : null}
 
                   <div className="space-y-0.5">
                     {filteredFriends.map((relation) => {
@@ -2415,7 +2415,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                       return (
                         <div
                           key={`${relation.requester_id}:${relation.addressee_id}`}
-                          className={`relative flex items-center justify-between rounded-lg border border-transparent px-3 py-2 hover:border-white/10 hover:bg-white/[0.03] ${rowStateClass}`}
+                          className={`home-friends-row relative flex items-center justify-between rounded-lg border border-transparent px-3 py-2 hover:border-white/10 hover:bg-white/[0.03] ${rowStateClass}`}
                         >
                           {hasMentionInUnread ? <span className="absolute bottom-1 left-0 top-1 w-1 rounded-r bg-[var(--state-mention-marker)]" /> : null}
                           {!hasMentionInUnread && unreadCount > 0 ? <span className="absolute bottom-1 left-0 top-1 w-1 rounded-r bg-[var(--state-unread-marker)]" /> : null}
@@ -2446,11 +2446,11 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
               )}
             </main>
 
-            <aside className="hidden w-[var(--layout-home-tools-width)] border-l border-black/35 bg-paw-bg-secondary p-4 xl:block">
-              <section className="ui-surface p-4">
+            <aside className="home-tools-panel hidden w-[var(--layout-home-tools-width)] border-l border-black/35 bg-paw-bg-secondary p-4 xl:block">
+              <section className="home-tools-card ui-surface p-4">
                 <h4 className="typo-body mb-2 font-semibold text-paw-text-secondary">{t("home.tools_title")}</h4>
 
-                <div className="mb-4 rounded-lg border border-white/10 bg-[var(--color-bg-tertiary)] p-2 text-xs">
+                <div className="home-tools-id-box mb-4 rounded-lg border border-white/10 bg-[var(--color-bg-tertiary)] p-2 text-xs">
                   <p className="typo-meta">{t("home.my_id")}</p>
                   <p className="typo-body mt-1 truncate text-paw-text-secondary">{effectiveUser?.id ?? t("common.none")}</p>
                   <Button variant="secondary" size="sm" className="mt-2 w-full" onClick={() => void copyId()}>
@@ -2540,7 +2540,7 @@ const HomePage = ({ isRouteActive = true }: HomePageProps) => {
                 className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-20 blur-[1px]"
               />
             ) : null}
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.38),rgba(0,0,0,0.82))]" />
+            <div className="dm-incoming-banner-overlay pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.38),rgba(0,0,0,0.82))]" />
             <div
               className="call-ring-popup-drag-area relative mb-5 flex flex-col items-center text-center"
               onPointerDown={handleIncomingCallPopupPointerDown}

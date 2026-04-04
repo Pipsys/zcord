@@ -133,7 +133,7 @@ export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, 
 
   if (indexedMessages.length === 0) {
     return (
-      <div className="grid h-full place-items-center bg-paw-bg-primary px-6 text-center">
+      <div className="message-list-empty grid h-full place-items-center bg-paw-bg-primary px-6 text-center">
         <div>
           <p className="typo-title-md text-paw-text-secondary">{t("message.empty_title")}</p>
           <p className="typo-body mt-2 text-paw-text-muted">{t("server.empty_chat_subtitle", { channel: channelName })}</p>
@@ -143,7 +143,7 @@ export const MessageList = ({ channelName, messages, onReply, onEdit, onDelete, 
   }
 
   return (
-    <div ref={parentRef} className="h-full overflow-y-auto overflow-x-hidden">
+    <div ref={parentRef} className="message-list-scroll h-full overflow-y-auto overflow-x-hidden">
       <div className="flex flex-col pb-3 pt-1">
         {listEntries.map((entry) => {
           if (entry.type === "divider") {

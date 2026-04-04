@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { uploadAvatar, uploadUserBanner } from "@/api/client";
@@ -16,7 +16,9 @@ const AVATAR_MAX_BYTES = 25 * 1024 * 1024;
 const USER_BANNER_MAX_BYTES = 30 * 1024 * 1024;
 const ALLOWED_AVATAR_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif"]);
 const ALLOWED_USER_BANNER_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif"]);
-const settingsSectionClass = "ui-surface px-5 py-4";
+const settingsCardClass = "rounded-xl border border-white/10 bg-[var(--color-bg-secondary)] p-5";
+
+type SettingsTabId = "profile" | "security" | "appearance" | "updates";
 
 const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -47,6 +49,9 @@ const getThemePreview = (theme: ThemeId): readonly [string, string, string] => {
   if (theme === THEMES.OLED_BLACK) {
     return ["#0c0d10", "#08090c", "#050609"];
   }
+  if (theme === THEMES.PEARL_LIGHT) {
+    return ["#f6f7fb", "#eef1f7", "#e4e9f4"];
+  }
   return ["#181b22", "#12151b", "#0d1015"];
 };
 
@@ -62,6 +67,7 @@ const SettingsPage = () => {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("profile");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -71,6 +77,18 @@ const SettingsPage = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
   const [updaterState, setUpdaterState] = useState<UpdaterState | null>(null);
+
+  const tabs = useMemo(
+    () => [
+      { id: "profile" as const, label: t("settings.profile") },
+      { id: "security" as const, label: t("settings.security") },
+      { id: "appearance" as const, label: t("settings.appearance") },
+      { id: "updates" as const, label: t("settings.updates") },
+    ],
+    [t],
+  );
+
+  const activeTabLabel = tabs.find((item) => item.id === activeTab)?.label ?? t("settings.title");
 
   useEffect(() => {
     setDisplayName(user?.username ?? "");
@@ -180,6 +198,12 @@ const SettingsPage = () => {
       description: t("settings.theme_oled_black_desc"),
       preview: getThemePreview(THEMES.OLED_BLACK),
     },
+    {
+      id: THEMES.PEARL_LIGHT,
+      label: t("settings.theme_pearl_light"),
+      description: t("settings.theme_pearl_light_desc"),
+      preview: getThemePreview(THEMES.PEARL_LIGHT),
+    },
   ] as const;
 
   const handlePickAvatar = async (file: File | null) => {
@@ -254,25 +278,53 @@ const SettingsPage = () => {
       return;
     }
 
-    const payload: { username?: string; email?: string } = {};
-    if (nextDisplayName !== user.username) {
-      payload.username = nextDisplayName;
-    }
-    if (nextEmail !== user.email) {
-      payload.email = nextEmail;
-    }
+    const usernameChanged = nextDisplayName !== user.username;
+    const emailChanged = nextEmail !== user.email;
 
-    if (Object.keys(payload).length === 0) {
+    if (!usernameChanged && !emailChanged) {
       pushToast(t("settings.profile_no_changes"), "");
       return;
     }
 
-    try {
-      const updated = await updateMe.mutateAsync(payload);
-      setUser(updated);
+    let hasAppliedChanges = false;
+    let firstErrorMessage: string | null = null;
+
+    if (usernameChanged) {
+      try {
+        const updated = await updateMe.mutateAsync({ username: nextDisplayName });
+        setUser(updated);
+        setDisplayName(updated.username);
+        setEmail(updated.email);
+        hasAppliedChanges = true;
+      } catch (error) {
+        firstErrorMessage = error instanceof Error ? error.message : t("common.unknown_error");
+      }
+    }
+
+    if (emailChanged) {
+      try {
+        const updated = await updateMe.mutateAsync({ email: nextEmail });
+        setUser(updated);
+        setDisplayName(updated.username);
+        setEmail(updated.email);
+        hasAppliedChanges = true;
+      } catch (error) {
+        if (firstErrorMessage === null) {
+          firstErrorMessage = error instanceof Error ? error.message : t("common.unknown_error");
+        }
+      }
+    }
+
+    if (firstErrorMessage !== null) {
+      if (hasAppliedChanges) {
+        pushToast(t("settings.profile_updated_title"), t("settings.profile_updated_desc"));
+      }
+      pushToast(t("home.request_failed"), firstErrorMessage);
+      return;
+    }
+
+    if (hasAppliedChanges) {
       pushToast(t("settings.profile_updated_title"), t("settings.profile_updated_desc"));
-    } catch (error) {
-      pushToast(t("home.request_failed"), error instanceof Error ? error.message : t("common.unknown_error"));
     }
   };
 
@@ -302,264 +354,279 @@ const SettingsPage = () => {
   };
 
   return (
-    <main className="h-full overflow-auto bg-paw-bg-primary p-6">
-      <div className="mx-auto max-w-2xl space-y-[var(--layout-section-gap)]">
-        <section className={settingsSectionClass}>
-          <h1 className="typo-title-lg">{t("settings.title")}</h1>
-          <p className="typo-body mt-1 text-paw-text-muted">{t("settings.description")}</p>
-        </section>
-
-        <section className={settingsSectionClass}>
-          <h2 className="typo-title-md mb-4 text-paw-text-primary">{t("settings.profile")}</h2>
-
-          <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="flex items-center gap-3">
-              <Avatar src={user?.avatar_url ?? null} label={user?.username ?? "user"} size="lg" />
-              <div className="min-w-0">
-                <p className="typo-body truncate font-semibold text-paw-text-secondary">{displayName || t("common.none")}</p>
-                <p className="typo-meta truncate">{t("settings.avatar_hint")}</p>
-              </div>
-            </div>
-
-            <div className="flex gap-2 md:ml-auto">
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/gif"
-                className="hidden"
-                onChange={(event) => void handlePickAvatar(event.target.files?.[0] ?? null)}
-              />
-              <Button size="sm" disabled={isUploadingAvatar} onClick={() => avatarInputRef.current?.click()}>
-                {isUploadingAvatar ? t("settings.avatar_uploading") : t("settings.avatar_upload")}
-              </Button>
-            </div>
+    <main className="h-full overflow-hidden bg-paw-bg-primary">
+      <div className="mx-auto flex h-full w-full max-w-[1320px]">
+        <aside className="relative flex h-full w-[260px] shrink-0 flex-col bg-[var(--color-bg-secondary)]/90 p-4 md:p-5">
+          <div>
+            <h1 className="typo-title-md text-paw-text-primary">{t("settings.title")}</h1>
+            <p className="typo-meta mt-1">{t("settings.description")}</p>
           </div>
 
-          <div className="mb-4 rounded-xl border border-white/10 bg-[var(--color-bg-tertiary)] p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="typo-body font-semibold text-paw-text-secondary">{t("settings.call_banner")}</p>
-              <input
-                ref={bannerInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/gif"
-                className="hidden"
-                onChange={(event) => void handlePickBanner(event.target.files?.[0] ?? null)}
-              />
-              <Button size="sm" variant="secondary" disabled={isUploadingBanner} onClick={() => bannerInputRef.current?.click()}>
-                {isUploadingBanner ? t("settings.banner_uploading") : t("settings.banner_upload")}
-              </Button>
-            </div>
-            <p className="typo-meta mb-3">{t("settings.banner_hint")}</p>
-            <div className="overflow-hidden rounded-lg border border-white/10 bg-[var(--color-bg-secondary)]">
-              {user?.banner_url ? (
-                <img src={user.banner_url} alt={t("settings.call_banner")} className="h-24 w-full object-cover" />
-              ) : (
-                <div className="flex h-24 items-center justify-center text-xs text-paw-text-muted">{t("settings.banner_empty")}</div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.display_name")}</label>
-              <Input
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("auth.email")}</label>
-              <Input
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                type="email"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <Button onClick={() => void handleSaveProfile()} disabled={updateMe.isPending}>
-              {t("settings.save_profile")}
-            </Button>
-          </div>
-        </section>
-
-        <section className={settingsSectionClass}>
-          <h2 className="typo-title-md mb-4 text-paw-text-primary">{t("settings.security")}</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.current_password")}</label>
-              <Input
-                value={currentPassword}
-                onChange={(event) => setCurrentPassword(event.target.value)}
-                type="password"
-                autoComplete="current-password"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.new_password")}</label>
-              <Input
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                type="password"
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.confirm_password")}</label>
-              <Input
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                type="password"
-                autoComplete="new-password"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <Button onClick={() => void handleChangePassword()} disabled={updateMe.isPending}>
-              {t("settings.change_password")}
-            </Button>
-          </div>
-        </section>
-
-        <section className={settingsSectionClass}>
-          <h2 className="typo-title-md mb-3 text-paw-text-primary">{t("settings.notifications")}</h2>
-          <label className="typo-body flex items-center gap-2 text-paw-text-secondary">
-            <input
-              type="checkbox"
-              checked={notifications}
-              onChange={(event) => setNotifications(event.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-[var(--color-bg-tertiary)] accent-paw-accent"
-            />
-            {t("settings.notifications_toggle")}
-          </label>
-        </section>
-
-        <section className={settingsSectionClass}>
-          <h2 className="typo-title-md mb-2 text-paw-text-primary">{t("settings.appearance")}</h2>
-          <p className="typo-meta mb-4">{t("settings.appearance_description")}</p>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            {themeOptions.map((option) => {
-              const isActiveTheme = option.id === theme;
+          <div className="mt-5 space-y-1">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
               return (
                 <button
-                  key={option.id}
+                  key={tab.id}
                   type="button"
-                  onClick={() => setTheme(option.id)}
-                  aria-pressed={isActiveTheme}
-                  className={`ui-focus-ring rounded-xl border p-3 text-left transition-colors ${
-                    isActiveTheme
-                      ? "border-paw-accent/50 bg-[var(--state-selected-bg)]"
-                      : "border-white/10 bg-[var(--color-bg-tertiary)] hover:bg-[var(--state-hover-bg)]"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`ui-focus-ring flex h-9 w-full items-center rounded-md px-3 text-left text-sm font-semibold transition-colors ${
+                    isActive
+                      ? "bg-[var(--state-selected-bg)] text-paw-text-primary"
+                      : "text-paw-text-muted hover:bg-[var(--state-hover-bg)] hover:text-paw-text-secondary"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="typo-body font-semibold text-paw-text-secondary">{option.label}</p>
-                    {isActiveTheme ? (
-                      <span className="rounded-full border border-paw-accent/40 bg-paw-accent/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-paw-text-primary">
-                        {t("settings.theme_active")}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="typo-meta mt-1">{option.description}</p>
-                  <div className="mt-3 flex gap-1.5">
-                    {option.preview.map((color) => (
-                      <span key={color} className="h-3 flex-1 rounded-full border border-white/10" style={{ background: color }} />
-                    ))}
-                  </div>
+                  {tab.label}
                 </button>
               );
             })}
           </div>
-        </section>
 
-        <section className={settingsSectionClass}>
-          <h2 className="typo-title-md mb-2 text-paw-text-primary">{t("settings.updates")}</h2>
-          <p className="typo-meta mb-4">{t("settings.updates_description")}</p>
+          <div className="mt-auto space-y-2 pt-4">
+            <div className="mb-4 h-px w-full bg-gradient-to-r from-transparent via-white/14 to-transparent" />
+            <Button variant="danger" className="w-full" onClick={() => void clearAuth()}>
+              {t("home.logout")}
+            </Button>
+            <Link to="/app/home" className="block">
+              <Button variant="ghost" className="w-full">
+                {t("common.back")}
+              </Button>
+            </Link>
+          </div>
 
-          <div className="rounded-xl border border-white/10 bg-[var(--color-bg-tertiary)] p-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="min-w-0">
-                <p className="typo-body truncate font-semibold text-paw-text-secondary">
-                  {t("settings.updates_current_version", { version: updaterState?.currentVersion ?? "..." })}
-                </p>
-                <p className="typo-meta">{updaterStatusLabel}</p>
-                {updaterState?.latestVersion && (
-                  <p className="typo-meta mt-1">
-                    {t("settings.updates_latest_version", { version: updaterState.latestVersion })}
-                    {releaseDateLabel ? ` | ${releaseDateLabel}` : ""}
-                  </p>
-                )}
-              </div>
+          <div className="pointer-events-none absolute inset-y-4 right-0 w-px bg-gradient-to-b from-transparent via-white/14 to-transparent" />
+        </aside>
 
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!canCheckUpdates}
-                  onClick={() => void handleCheckUpdates()}
-                >
-                  {updaterState?.status === "checking" ? t("settings.updates_checking") : t("settings.updates_check")}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={!canDownloadUpdate}
-                  onClick={() => void handleDownloadUpdate()}
-                >
-                  {updaterState?.status === "downloading" ? t("settings.updates_downloading") : t("settings.updates_download")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={!canInstallUpdate}
-                  onClick={() => void handleInstallUpdate()}
-                >
-                  {updaterState?.status === "installing" ? t("settings.updates_installing") : t("settings.updates_install")}
-                </Button>
-              </div>
+        <section className="min-w-0 flex-1 overflow-y-auto px-6 py-6 md:px-8 md:py-7">
+          <header className="mb-6 pb-4">
+            <h2 className="typo-title-lg">{activeTabLabel}</h2>
+            <div className="mt-4 h-px w-full bg-gradient-to-r from-transparent via-white/16 to-transparent" />
+          </header>
+
+          {activeTab === "profile" ? (
+            <div className="space-y-4">
+              <section className={settingsCardClass}>
+                <div className="flex flex-col gap-4 md:flex-row md:items-center">
+                  <div className="flex items-center gap-3">
+                    <Avatar src={user?.avatar_url ?? null} label={user?.username ?? "user"} size="lg" />
+                    <div className="min-w-0">
+                      <p className="typo-body truncate font-semibold text-paw-text-secondary">{displayName || t("common.none")}</p>
+                      <p className="typo-meta truncate">{t("settings.avatar_hint")}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 md:ml-auto">
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif"
+                      className="hidden"
+                      onChange={(event) => void handlePickAvatar(event.target.files?.[0] ?? null)}
+                    />
+                    <Button size="sm" disabled={isUploadingAvatar} onClick={() => avatarInputRef.current?.click()}>
+                      {isUploadingAvatar ? t("settings.avatar_uploading") : t("settings.avatar_upload")}
+                    </Button>
+                  </div>
+                </div>
+              </section>
+
+              <section className={settingsCardClass}>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="typo-body font-semibold text-paw-text-secondary">{t("settings.call_banner")}</p>
+                  <input
+                    ref={bannerInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif"
+                    className="hidden"
+                    onChange={(event) => void handlePickBanner(event.target.files?.[0] ?? null)}
+                  />
+                  <Button size="sm" variant="secondary" disabled={isUploadingBanner} onClick={() => bannerInputRef.current?.click()}>
+                    {isUploadingBanner ? t("settings.banner_uploading") : t("settings.banner_upload")}
+                  </Button>
+                </div>
+                <p className="typo-meta mb-3">{t("settings.banner_hint")}</p>
+                <div className="overflow-hidden rounded-lg border border-white/10 bg-[var(--color-bg-tertiary)]">
+                  {user?.banner_url ? (
+                    <img src={user.banner_url} alt={t("settings.call_banner")} className="h-24 w-full object-cover" />
+                  ) : (
+                    <div className="flex h-24 items-center justify-center text-xs text-paw-text-muted">{t("settings.banner_empty")}</div>
+                  )}
+                </div>
+              </section>
+
+              <section className={settingsCardClass}>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.display_name")}</label>
+                    <Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("auth.email")}</label>
+                    <Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" />
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <Button onClick={() => void handleSaveProfile()} disabled={updateMe.isPending}>
+                    {t("settings.save_profile")}
+                  </Button>
+                </div>
+              </section>
+
+              <section className={settingsCardClass}>
+                <h3 className="typo-title-md mb-2">{t("settings.notifications")}</h3>
+                <label className="typo-body flex items-center gap-2 text-paw-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={notifications}
+                    onChange={(event) => setNotifications(event.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-[var(--color-bg-tertiary)] accent-paw-accent"
+                  />
+                  {t("settings.notifications_toggle")}
+                </label>
+              </section>
             </div>
+          ) : null}
 
-            {updaterState?.status === "downloading" && (
-              <div className="mt-3 space-y-2">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-paw-accent transition-all"
-                    style={{ width: `${Math.max(0, Math.min(100, updaterState.progressPercent))}%` }}
+          {activeTab === "security" ? (
+            <section className={settingsCardClass}>
+              <p className="typo-meta mb-4">{t("settings.security_description")}</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.current_password")}</label>
+                  <Input
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    type="password"
+                    autoComplete="current-password"
                   />
                 </div>
-                <p className="typo-meta">
-                  {t("settings.updates_progress", {
-                    percent: Math.round(updaterState.progressPercent),
-                    downloaded: formatBytes(updaterState.downloadedBytes),
-                    total: formatBytes(updaterState.totalBytes),
-                  })}
-                </p>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.new_password")}</label>
+                  <Input
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("settings.confirm_password")}</label>
+                  <Input
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                  />
+                </div>
               </div>
-            )}
 
-            {updaterState?.message && (
-              <p className="mt-3 text-xs text-rose-300">{updaterState.message}</p>
-            )}
-          </div>
+              <div className="mt-4">
+                <Button onClick={() => void handleChangePassword()} disabled={updateMe.isPending}>
+                  {t("settings.change_password")}
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === "appearance" ? (
+            <section className={settingsCardClass}>
+              <p className="typo-meta mb-4">{t("settings.appearance_description")}</p>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {themeOptions.map((option) => {
+                  const isActiveTheme = option.id === theme;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setTheme(option.id)}
+                      aria-pressed={isActiveTheme}
+                      className={`ui-focus-ring rounded-xl border p-3 text-left transition-colors ${
+                        isActiveTheme
+                          ? "border-paw-accent/50 bg-[var(--state-selected-bg)]"
+                          : "border-white/10 bg-[var(--color-bg-tertiary)] hover:bg-[var(--state-hover-bg)]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="typo-body font-semibold text-paw-text-secondary">{option.label}</p>
+                        {isActiveTheme ? (
+                          <span className="rounded-full border border-paw-accent/40 bg-paw-accent/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-paw-text-primary">
+                            {t("settings.theme_active")}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="typo-meta mt-1">{option.description}</p>
+                      <div className="mt-3 flex gap-1.5">
+                        {option.preview.map((color) => (
+                          <span key={color} className="h-3 flex-1 rounded-full border border-white/10" style={{ background: color }} />
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === "updates" ? (
+            <section className={settingsCardClass}>
+              <p className="typo-meta mb-4">{t("settings.updates_description")}</p>
+
+              <div className="rounded-xl border border-white/10 bg-[var(--color-bg-tertiary)] p-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <p className="typo-body truncate font-semibold text-paw-text-secondary">
+                      {t("settings.updates_current_version", { version: updaterState?.currentVersion ?? "..." })}
+                    </p>
+                    <p className="typo-meta">{updaterStatusLabel}</p>
+                    {updaterState?.latestVersion ? (
+                      <p className="typo-meta mt-1">
+                        {t("settings.updates_latest_version", { version: updaterState.latestVersion })}
+                        {releaseDateLabel ? ` | ${releaseDateLabel}` : ""}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="secondary" disabled={!canCheckUpdates} onClick={() => void handleCheckUpdates()}>
+                      {updaterState?.status === "checking" ? t("settings.updates_checking") : t("settings.updates_check")}
+                    </Button>
+                    <Button size="sm" disabled={!canDownloadUpdate} onClick={() => void handleDownloadUpdate()}>
+                      {updaterState?.status === "downloading" ? t("settings.updates_downloading") : t("settings.updates_download")}
+                    </Button>
+                    <Button size="sm" variant="primary" disabled={!canInstallUpdate} onClick={() => void handleInstallUpdate()}>
+                      {updaterState?.status === "installing" ? t("settings.updates_installing") : t("settings.updates_install")}
+                    </Button>
+                  </div>
+                </div>
+
+                {updaterState?.status === "downloading" ? (
+                  <div className="mt-3 space-y-2">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-paw-accent transition-all"
+                        style={{ width: `${Math.max(0, Math.min(100, updaterState.progressPercent))}%` }}
+                      />
+                    </div>
+                    <p className="typo-meta">
+                      {t("settings.updates_progress", {
+                        percent: Math.round(updaterState.progressPercent),
+                        downloaded: formatBytes(updaterState.downloadedBytes),
+                        total: formatBytes(updaterState.totalBytes),
+                      })}
+                    </p>
+                  </div>
+                ) : null}
+
+                {updaterState?.message ? <p className="mt-3 text-xs text-rose-300">{updaterState.message}</p> : null}
+              </div>
+            </section>
+          ) : null}
         </section>
-
-        <section className={settingsSectionClass}>
-          <Button variant="danger" onClick={() => void clearAuth()}>
-            {t("home.logout")}
-          </Button>
-        </section>
-
-        <div className="flex gap-2">
-          <Link to="/app/home">
-            <Button variant="secondary">{t("common.back")}</Button>
-          </Link>
-        </div>
       </div>
     </main>
   );
 };
 
 export default SettingsPage;
-

@@ -166,7 +166,7 @@ export const Sidebar = () => {
   const unreadDmLabel = unreadDmCount > 99 ? "99+" : `${unreadDmCount}`;
 
   return (
-    <aside className="flex h-full w-[var(--layout-sidebar-width)] flex-col items-center gap-2 overflow-hidden border-r border-black/35 bg-paw-bg-tertiary py-3">
+    <aside className="sidebar-server-panel flex h-full w-[var(--layout-sidebar-width)] flex-col items-center gap-2 overflow-hidden border-r border-black/35 bg-paw-bg-tertiary py-3">
       <Tooltip label="Home" side="right">
         <Link to="/app/home" onClick={() => setActiveServer(null)}>
           <motion.div
@@ -175,7 +175,7 @@ export const Sidebar = () => {
             whileTap={{ scale: 0.97 }}
             style={{ backgroundColor: homeActive ? "var(--color-accent-primary)" : "transparent", color: "var(--color-text-primary)" }}
           >
-            <span className="relative grid h-12 w-12 place-items-center rounded-xl bg-black/20 p-1">
+            <span className="sidebar-home-icon-shell relative grid h-12 w-12 place-items-center rounded-xl bg-black/20 p-1">
               <img src={zcordLogo} alt="zcord" className="block h-full w-full object-contain" />
               {unreadDmCount > 0 ? (
                 <span className="pointer-events-none absolute -right-1.5 -top-1.5 z-[120] inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-[#2a2d35] bg-[#f23f43] px-1.5 text-[11px] font-bold leading-none text-white shadow-[0_2px_6px_rgba(0,0,0,0.55)]">
@@ -188,7 +188,7 @@ export const Sidebar = () => {
         </Link>
       </Tooltip>
 
-      <div className="h-px w-8 bg-white/8" />
+      <div className="sidebar-server-separator h-px w-8 bg-white/8" />
 
       <Reorder.Group
         axis="y"
@@ -314,10 +314,10 @@ export const Sidebar = () => {
                   />
                     <span className="sidebar-server-icon-shell relative grid h-10 w-10 place-items-center">
                     <span
-                      className={`relative z-10 grid h-10 w-10 place-items-center overflow-hidden transition-all duration-200 ${
+                      className={`sidebar-server-icon-core relative z-10 grid h-10 w-10 place-items-center overflow-hidden transition-all duration-200 ${
                         active
-                          ? "rounded-2xl bg-[var(--color-bg-elevated)] shadow-[0_8px_16px_rgba(0,0,0,0.36)]"
-                          : "rounded-full bg-[rgba(255,255,255,0.02)] group-hover:rounded-2xl group-hover:bg-[rgba(255,255,255,0.06)]"
+                          ? "sidebar-server-icon-core--active rounded-2xl bg-[var(--color-bg-elevated)] shadow-[0_8px_16px_rgba(0,0,0,0.36)]"
+                          : "sidebar-server-icon-core--idle rounded-full bg-[rgba(255,255,255,0.02)] group-hover:rounded-2xl group-hover:bg-[rgba(255,255,255,0.06)]"
                       }`}
                     >
                       {server.icon_url ? (

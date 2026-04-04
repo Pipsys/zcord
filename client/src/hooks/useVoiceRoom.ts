@@ -92,9 +92,40 @@ const buildIceServers = (): RTCIceServer[] => {
 const ICE_SERVERS = buildIceServers();
 const DEFAULT_INPUT_DEVICE_ID = "__system_default__";
 const DEFAULT_SCREEN_SOURCE_ID = "__auto__";
-const DISCONNECTED_CLOSE_DELAY_MS = 12_000;
-const ICE_RESTART_MAX_ATTEMPTS = 2;
-const SCREEN_SHARE_TARGET_FPS = 60;
+const DISCONNECTED_CLOSE_DELAY_MS = 20_000;
+const ICE_RESTART_MAX_ATTEMPTS = 5;
+
+const parsePositiveIntEnv = (value: unknown, fallback: number, min: number, max: number): number => {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  const normalized = Math.round(numeric);
+  if (normalized < min || normalized > max) {
+    return fallback;
+  }
+  return normalized;
+};
+
+const SCREEN_SHARE_TARGET_WIDTH = parsePositiveIntEnv(import.meta.env.VITE_SCREEN_SHARE_WIDTH as unknown, 1920, 640, 3840);
+const SCREEN_SHARE_TARGET_HEIGHT = parsePositiveIntEnv(import.meta.env.VITE_SCREEN_SHARE_HEIGHT as unknown, 1080, 360, 2160);
+const SCREEN_SHARE_TARGET_FPS = parsePositiveIntEnv(import.meta.env.VITE_SCREEN_SHARE_FPS as unknown, 60, 24, 60);
+const SCREEN_SHARE_VIDEO_MAX_BITRATE = parsePositiveIntEnv(
+  import.meta.env.VITE_SCREEN_SHARE_MAX_BITRATE as unknown,
+  12_000_000,
+  1_500_000,
+  20_000_000,
+);
+const SCREEN_SHARE_AUDIO_MAX_BITRATE = parsePositiveIntEnv(
+  import.meta.env.VITE_SCREEN_SHARE_AUDIO_MAX_BITRATE as unknown,
+  192_000,
+  64_000,
+  320_000,
+);
+const VOICE_AUDIO_MAX_BITRATE = parsePositiveIntEnv(import.meta.env.VITE_VOICE_AUDIO_MAX_BITRATE as unknown, 96_000, 32_000, 256_000);
 const DEFAULT_JOIN_SOUND_PATH = "sounds/voice-join.wav";
 const DEFAULT_LEAVE_SOUND_PATH = "sounds/voice-leave.wav";
 const DEFAULT_MIC_ON_SOUND_PATH = "sounds/voice-mic-on.wav";
@@ -198,13 +229,21 @@ const optimizeScreenTrackForStreaming = async (track: MediaStreamTrack): Promise
     return;
   }
 
-  track.contentHint = "motion";
+  track.contentHint = "detail";
   if (typeof track.applyConstraints !== "function") {
     return;
   }
 
   try {
     await track.applyConstraints({
+      width: {
+        ideal: SCREEN_SHARE_TARGET_WIDTH,
+        max: SCREEN_SHARE_TARGET_WIDTH,
+      },
+      height: {
+        ideal: SCREEN_SHARE_TARGET_HEIGHT,
+        max: SCREEN_SHARE_TARGET_HEIGHT,
+      },
       frameRate: {
         ideal: SCREEN_SHARE_TARGET_FPS,
         max: SCREEN_SHARE_TARGET_FPS,
@@ -219,7 +258,7 @@ const optimizeScreenTrackForStreaming = async (track: MediaStreamTrack): Promise
         },
       });
     } catch {
-      // Keep default browser-selected FPS if constraints are not supported.
+      // Keep browser-selected defaults if constraints are not supported.
     }
   }
 };
@@ -231,12 +270,29 @@ const optimizeScreenVideoSender = async (sender: RTCRtpSender): Promise<void> =>
     nextEncodings[0] = {
       ...nextEncodings[0],
       maxFramerate: SCREEN_SHARE_TARGET_FPS,
+      maxBitrate: SCREEN_SHARE_VIDEO_MAX_BITRATE,
       scaleResolutionDownBy: 1,
+    };
+    parameters.encodings = nextEncodings;
+    (parameters as RTCRtpSendParameters & { degradationPreference?: RTCDegradationPreference }).degradationPreference = "maintain-resolution";
+    await sender.setParameters(parameters);
+  } catch {
+    // Not all WebRTC stacks support encoding tuning.
+  }
+};
+
+const optimizeAudioSender = async (sender: RTCRtpSender, maxBitrate: number): Promise<void> => {
+  try {
+    const parameters = sender.getParameters();
+    const nextEncodings = parameters.encodings && parameters.encodings.length > 0 ? [...parameters.encodings] : [{}];
+    nextEncodings[0] = {
+      ...nextEncodings[0],
+      maxBitrate,
     };
     parameters.encodings = nextEncodings;
     await sender.setParameters(parameters);
   } catch {
-    // Not all WebRTC stacks support encoding tuning.
+    // Not all WebRTC stacks support audio encoding tuning.
   }
 };
 
@@ -596,6 +652,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
+      channelCount: { ideal: 1, max: 1 },
+      sampleRate: { ideal: 48_000 },
+      sampleSize: { ideal: 16 },
+      latency: { ideal: 0.02 },
       googEchoCancellation: true,
       googNoiseSuppression: true,
       googAutoGainControl: true,
@@ -785,6 +845,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       peer.onicecandidate = null;
       peer.ontrack = null;
       peer.onconnectionstatechange = null;
+      peer.oniceconnectionstatechange = null;
       peer.onsignalingstatechange = null;
       peer.close();
       peersRef.current.delete(remoteUserId);
@@ -890,7 +951,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
       const nextAttempt = attempts + 1;
       iceRestartAttemptsRef.current.set(remoteUserId, nextAttempt);
-      const delayMs = 250 * nextAttempt;
+      const delayMs = Math.min(4_000, 500 * 2 ** (nextAttempt - 1));
       voiceWarn("scheduling ice restart", { remoteUserId, reason, attempt: nextAttempt, delayMs });
 
       const timer = window.setTimeout(() => {
@@ -1022,7 +1083,12 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       });
       let peer: RTCPeerConnection;
       try {
-        peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        peer = new RTCPeerConnection({
+          iceServers: ICE_SERVERS,
+          iceCandidatePoolSize: 8,
+          bundlePolicy: "max-bundle",
+          rtcpMuxPolicy: "require",
+        });
       } catch (error) {
         peerCreationBackoffUntilRef.current = Date.now() + 5_000;
         voiceWarn("failed to create peer", {
@@ -1037,7 +1103,10 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       const localStream = localStreamRef.current;
       if (localStream) {
         for (const track of localStream.getTracks()) {
-          peer.addTrack(track, localStream);
+          const sender = peer.addTrack(track, localStream);
+          if (track.kind === "audio") {
+            void optimizeAudioSender(sender, VOICE_AUDIO_MAX_BITRATE);
+          }
         }
       }
 
@@ -1060,6 +1129,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
         if (screenAudioTrack && screenAudioTrack.readyState === "live") {
           try {
             senders.audio = peer.addTrack(screenAudioTrack, screenStream);
+            if (senders.audio) {
+              void optimizeAudioSender(senders.audio, SCREEN_SHARE_AUDIO_MAX_BITRATE);
+            }
           } catch (error) {
             voiceWarn("failed to attach screen audio track to peer", {
               remoteUserId,
@@ -1273,6 +1345,20 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
 
         if (state === "closed") {
           closePeer(remoteUserId);
+        }
+      };
+      peer.oniceconnectionstatechange = () => {
+        const state = peer.iceConnectionState;
+        voiceLog("peer ice connection state", { remoteUserId, state });
+        if (state === "failed") {
+          const scheduled = scheduleIceRestart(remoteUserId, "ice-failed");
+          if (!scheduled) {
+            closePeer(remoteUserId);
+          }
+          return;
+        }
+        if (state === "disconnected") {
+          void scheduleIceRestart(remoteUserId, "ice-disconnected");
         }
       };
       peer.onsignalingstatechange = () => {
@@ -1544,6 +1630,14 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
     const captureAttempts: DisplayMediaStreamOptions[] = [
       {
         video: {
+          width: {
+            ideal: SCREEN_SHARE_TARGET_WIDTH,
+            max: SCREEN_SHARE_TARGET_WIDTH,
+          },
+          height: {
+            ideal: SCREEN_SHARE_TARGET_HEIGHT,
+            max: SCREEN_SHARE_TARGET_HEIGHT,
+          },
           frameRate: {
             ideal: SCREEN_SHARE_TARGET_FPS,
             max: SCREEN_SHARE_TARGET_FPS,
@@ -1664,6 +1758,9 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
       if (screenAudioTrack && screenAudioTrack.readyState === "live") {
         try {
           senders.audio = peer.addTrack(screenAudioTrack, screenStream);
+          if (senders.audio) {
+            await optimizeAudioSender(senders.audio, SCREEN_SHARE_AUDIO_MAX_BITRATE);
+          }
         } catch (error) {
           voiceWarn("failed to add screen audio track", {
             remoteUserId,
@@ -1825,6 +1922,7 @@ export const useVoiceRoom = (socket: WebSocket | null): UseVoiceRoomResult => {
           }
           try {
             await sender.replaceTrack(nextTrack);
+            await optimizeAudioSender(sender, VOICE_AUDIO_MAX_BITRATE);
           } catch {
             // Keep existing sender track if replacement fails for this connection.
           }

@@ -27,18 +27,20 @@ logger = logging.getLogger(__name__)
 
 
 class EventRateLimiter:
-    def __init__(self, max_events_per_second: int) -> None:
+    def __init__(self, max_events_per_second: int, voice_signal_limit_per_second: int) -> None:
         self.max_events_per_second = max_events_per_second
+        self.voice_signal_limit_per_second = max(voice_signal_limit_per_second, max_events_per_second)
         self._events: dict[int, deque[datetime]] = defaultdict(deque)
 
-    def allow(self, websocket: WebSocket) -> bool:
+    def allow(self, websocket: WebSocket, *, event_type: str | None = None) -> bool:
         now = datetime.now(UTC)
         key = id(websocket)
         queue = self._events[key]
         cutoff = now - timedelta(seconds=1)
         while queue and queue[0] < cutoff:
             queue.popleft()
-        if len(queue) >= self.max_events_per_second:
+        limit = self.voice_signal_limit_per_second if event_type == ClientEventType.VOICE_SIGNAL.value else self.max_events_per_second
+        if len(queue) >= limit:
             return False
         queue.append(now)
         return True
@@ -47,7 +49,10 @@ class EventRateLimiter:
         self._events.pop(id(websocket), None)
 
 
-rate_limiter = EventRateLimiter(settings.websocket_event_limit_per_second)
+rate_limiter = EventRateLimiter(
+    settings.websocket_event_limit_per_second,
+    settings.websocket_voice_signal_limit_per_second,
+)
 
 
 async def authenticate_websocket_token(token: str) -> str:
@@ -209,7 +214,8 @@ def _coerce_bool(value: Any) -> bool | None:
 async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[str, Any]) -> None:
     await manager.refresh_presence(user_id)
 
-    if not rate_limiter.allow(websocket):
+    event_type = event.get("t")
+    if not rate_limiter.allow(websocket, event_type=event_type if isinstance(event_type, str) else None):
         await websocket.send_json(
             {
                 "op": "ERROR",
@@ -219,7 +225,6 @@ async def handle_client_event(user_id: str, websocket: WebSocket, event: dict[st
         )
         return
 
-    event_type = event.get("t")
     data = event.get("d") if isinstance(event.get("d"), dict) else {}
 
     if event_type == ClientEventType.IDENTIFY.value:
