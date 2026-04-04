@@ -91,7 +91,7 @@ const sectionHeadingClass = "typo-meta px-2 font-semibold uppercase tracking-[0.
 const channelRowBaseClass =
   "group flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left typo-body transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
 const iconActionButtonClass =
-  "grid h-6 w-6 place-items-center rounded-md border border-white/12 bg-black/25 text-paw-text-muted transition-colors ui-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35 disabled:cursor-not-allowed disabled:opacity-45";
+  "channel-list-icon-btn grid h-6 w-6 place-items-center rounded-md border border-white/8 bg-white/[0.03] text-paw-text-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/20 disabled:cursor-not-allowed disabled:opacity-45";
 
 export const ChannelList = ({
   connectedVoiceChannelId,
@@ -401,7 +401,7 @@ export const ChannelList = ({
                 title={t("server.settings_button")}
                 aria-label={t("server.settings_button")}
                 onClick={onOpenServerSettings}
-                className="grid h-7 w-7 place-items-center rounded-md border border-white/15 bg-black/35 text-paw-text-secondary backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+                className="channel-list-icon-btn channel-list-icon-btn--header"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
                   <path
@@ -446,7 +446,7 @@ export const ChannelList = ({
                 onClick={onCreateTextChannel}
                 className={iconActionButtonClass}
               >
-                <span className="text-[16px] font-semibold leading-none">+</span>
+                <span className="channel-list-plus-glyph">+</span>
               </button>
             </div>
           </div>
@@ -522,7 +522,7 @@ export const ChannelList = ({
                 onClick={onCreateVoiceChannel}
                 className={iconActionButtonClass}
               >
-                <span className="text-[16px] font-semibold leading-none">+</span>
+                <span className="channel-list-plus-glyph">+</span>
               </button>
             </div>
           </div>

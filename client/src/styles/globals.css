@@ -253,6 +253,97 @@ body::before {
     animation: ui-fade-in var(--motion-fast) ease both;
   }
 
+  .sidebar-server-reorder-item {
+    width: 56px;
+    height: 56px;
+    display: grid;
+    place-items: center;
+    position: relative;
+    list-style: none;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+    transform: translateZ(0);
+    will-change: transform;
+    background: transparent;
+    border-radius: 14px;
+  }
+
+  .sidebar-server-reorder-item:active {
+    cursor: grabbing;
+  }
+
+  .sidebar-server-reorder-item--dragging {
+    z-index: 140;
+  }
+
+  .sidebar-server-link {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    text-decoration: none;
+    outline: none;
+  }
+
+  .sidebar-server-icon-shell {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  .channel-list-icon-btn {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--color-text-muted);
+    transition:
+      border-color var(--motion-fast) ease,
+      background-color var(--motion-fast) ease,
+      color var(--motion-fast) ease;
+  }
+
+  .channel-list-icon-btn:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--color-text-secondary);
+  }
+
+  .channel-list-icon-btn:active {
+    border-color: rgba(255, 255, 255, 0.17);
+    background: rgba(255, 255, 255, 0.09);
+    color: var(--color-text-primary);
+  }
+
+  .channel-list-icon-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.2);
+  }
+
+  .channel-list-icon-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .channel-list-icon-btn--header {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.24);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--color-text-secondary);
+  }
+
+  .channel-list-plus-glyph {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1;
+    transform: translateY(-0.5px);
+  }
+
   .ui-app-frame {
     height: 100vh;
     overflow: hidden;

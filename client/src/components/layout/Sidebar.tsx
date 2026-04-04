@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useMemo, useRef, useState } from "react";
+import { motion, Reorder } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
 
 import { useDirectChannelsQuery } from "@/api/queries";
@@ -16,7 +16,7 @@ import zcordLogo from "../../../animal.png";
 const homeItemBase =
   "relative z-10 grid h-14 w-14 shrink-0 place-items-center overflow-visible rounded-2xl text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
 const serverItemBase =
-  "relative z-10 grid h-[52px] w-[52px] shrink-0 place-items-center overflow-visible rounded-2xl text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35";
+  "group relative z-10 grid h-12 w-12 shrink-0 place-items-center overflow-visible rounded-2xl text-sm font-semibold transition-all duration-150 focus-visible:outline-none";
 
 const VoiceTooltipIcon = () => (
   <svg className="h-[var(--icon-size-md)] w-[var(--icon-size-md)]" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -71,138 +71,6 @@ const getFallbackServerId = (messages: Message[]): string | null => {
   return null;
 };
 
-const DEFAULT_GLOW_RGB = "109, 126, 255";
-
-const rgbToHsl = (red: number, green: number, blue: number): [number, number, number] => {
-  const r = red / 255;
-  const g = green / 255;
-  const b = blue / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  const lightness = (max + min) / 2;
-
-  if (delta === 0) {
-    return [0, 0, lightness];
-  }
-
-  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-  let hue = 0;
-
-  if (max === r) {
-    hue = (g - b) / delta + (g < b ? 6 : 0);
-  } else if (max === g) {
-    hue = (b - r) / delta + 2;
-  } else {
-    hue = (r - g) / delta + 4;
-  }
-
-  return [hue / 6, saturation, lightness];
-};
-
-const hueToRgb = (p: number, q: number, tRaw: number): number => {
-  let t = tRaw;
-  if (t < 0) t += 1;
-  if (t > 1) t -= 1;
-  if (t < 1 / 6) return p + (q - p) * 6 * t;
-  if (t < 1 / 2) return q;
-  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-  return p;
-};
-
-const hslToRgb = (hue: number, saturation: number, lightness: number): [number, number, number] => {
-  if (saturation === 0) {
-    const v = Math.round(lightness * 255);
-    return [v, v, v];
-  }
-
-  const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
-  const p = 2 * lightness - q;
-
-  const r = hueToRgb(p, q, hue + 1 / 3);
-  const g = hueToRgb(p, q, hue);
-  const b = hueToRgb(p, q, hue - 1 / 3);
-
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-};
-
-const extractGlowRgbFromImage = (src: string): Promise<string | null> =>
-  new Promise((resolve) => {
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.decoding = "async";
-
-    image.onerror = () => resolve(null);
-    image.onload = () => {
-      try {
-        const size = 28;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-
-        if (!context) {
-          resolve(null);
-          return;
-        }
-
-        context.drawImage(image, 0, 0, size, size);
-        const { data } = context.getImageData(0, 0, size, size);
-
-        let weightedRed = 0;
-        let weightedGreen = 0;
-        let weightedBlue = 0;
-        let totalWeight = 0;
-
-        for (let index = 0; index < data.length; index += 16) {
-          const red = data[index] ?? 0;
-          const green = data[index + 1] ?? 0;
-          const blue = data[index + 2] ?? 0;
-          const alpha = (data[index + 3] ?? 0) / 255;
-
-          if (alpha < 0.35) {
-            continue;
-          }
-
-          const max = Math.max(red, green, blue);
-          const min = Math.min(red, green, blue);
-          const saturation = max === 0 ? 0 : (max - min) / max;
-          const lightness = (max + min) / 510;
-
-          if (lightness < 0.14) {
-            continue;
-          }
-
-          const weight = alpha * (0.28 + saturation * 0.95 + lightness * 0.4);
-          weightedRed += red * weight;
-          weightedGreen += green * weight;
-          weightedBlue += blue * weight;
-          totalWeight += weight;
-        }
-
-        if (totalWeight <= 0.0001) {
-          resolve(null);
-          return;
-        }
-
-        const averagedRed = Math.round(weightedRed / totalWeight);
-        const averagedGreen = Math.round(weightedGreen / totalWeight);
-        const averagedBlue = Math.round(weightedBlue / totalWeight);
-
-        const [hue, saturation, lightness] = rgbToHsl(averagedRed, averagedGreen, averagedBlue);
-        const tunedSaturation = Math.min(0.85, Math.max(0.4, saturation));
-        const tunedLightness = Math.min(0.64, Math.max(0.36, lightness));
-        const [finalRed, finalGreen, finalBlue] = hslToRgb(hue, tunedSaturation, tunedLightness);
-
-        resolve(`${finalRed}, ${finalGreen}, ${finalBlue}`);
-      } catch {
-        resolve(null);
-      }
-    };
-
-    image.src = src;
-  });
-
 export const Sidebar = () => {
   const { t } = useI18n();
   const location = useLocation();
@@ -211,11 +79,13 @@ export const Sidebar = () => {
   const servers = useServerStore((state) => state.servers);
   const activeServerId = useServerStore((state) => state.activeServerId);
   const setActiveServer = useServerStore((state) => state.setActiveServer);
+  const setServerOrder = useServerStore((state) => state.setServerOrder);
   const participantsByChannel = useVoiceStore((state) => state.participantsByChannel);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const messagesByChannel = useMessageStore((state) => state.byChannel);
   const { data: knownChannels } = useDirectChannelsQuery();
-  const [glowByIconUrl, setGlowByIconUrl] = useState<Record<string, string>>({});
+  const [draggingServerId, setDraggingServerId] = useState<string | null>(null);
+  const suppressClickUntilRef = useRef(0);
 
   const homeActive = location.pathname.startsWith("/app/home");
   const voiceMembersByServer = useMemo(() => {
@@ -295,46 +165,8 @@ export const Sidebar = () => {
 
   const unreadDmLabel = unreadDmCount > 99 ? "99+" : `${unreadDmCount}`;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const iconUrls = Array.from(
-      new Set(
-        servers
-          .map((server) => server.icon_url)
-          .filter((iconUrl): iconUrl is string => typeof iconUrl === "string" && iconUrl.trim().length > 0),
-      ),
-    );
-
-    const missingUrls = iconUrls.filter((iconUrl) => !glowByIconUrl[iconUrl]);
-    if (missingUrls.length === 0) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    void Promise.all(
-      missingUrls.map(async (iconUrl) => {
-        const glowRgb = await extractGlowRgbFromImage(iconUrl);
-        if (!glowRgb || cancelled) {
-          return;
-        }
-        setGlowByIconUrl((previous) => {
-          if (previous[iconUrl] === glowRgb) {
-            return previous;
-          }
-          return { ...previous, [iconUrl]: glowRgb };
-        });
-      }),
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [glowByIconUrl, servers]);
-
   return (
-    <aside className="flex h-full w-[var(--layout-sidebar-width)] flex-col items-center gap-2 border-r border-black/35 bg-paw-bg-tertiary py-3">
+    <aside className="flex h-full w-[var(--layout-sidebar-width)] flex-col items-center gap-2 overflow-hidden border-r border-black/35 bg-paw-bg-tertiary py-3">
       <Tooltip label="Home" side="right">
         <Link to="/app/home" onClick={() => setActiveServer(null)}>
           <motion.div
@@ -358,10 +190,17 @@ export const Sidebar = () => {
 
       <div className="h-px w-8 bg-white/8" />
 
-      <div className="flex flex-1 flex-col items-center gap-2 overflow-y-auto pb-2">
+      <Reorder.Group
+        axis="y"
+        values={servers}
+        onReorder={(nextServers) => {
+          setServerOrder(nextServers.map((item) => item.id));
+        }}
+        className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden pb-2"
+        layoutScroll
+      >
         {servers.map((server) => {
           const active = server.id === activeServerId || server.id === routeServerId;
-          const glowRgb = server.icon_url ? (glowByIconUrl[server.icon_url] ?? DEFAULT_GLOW_RGB) : DEFAULT_GLOW_RGB;
           const serverVoiceMembers = voiceMembersByServer[server.id] ?? [];
           const unreadSummary = unreadByServer[server.id];
           const unreadCount = unreadSummary?.total ?? 0;
@@ -434,54 +273,74 @@ export const Sidebar = () => {
           );
 
           return (
-            <Tooltip key={server.id} content={tooltipContent} side="right" popupClassName="px-2.5 py-2">
-              <Link to={`/app/server/${server.id}`} onClick={() => setActiveServer(server.id)}>
-                <motion.div
-                  className={serverItemBase}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  style={{ backgroundColor: active ? "transparent" : "var(--color-bg-secondary)", color: "var(--color-text-primary)" }}
+            <Reorder.Item
+              key={server.id}
+              as="div"
+              value={server}
+              className={`sidebar-server-reorder-item ${draggingServerId === server.id ? "sidebar-server-reorder-item--dragging" : ""}`}
+              whileDrag={{
+                scale: 1.02,
+                zIndex: 140,
+                boxShadow: "0 10px 20px rgba(0,0,0,0.36)",
+              }}
+              onDragStart={() => setDraggingServerId(server.id)}
+              onDragEnd={() => {
+                setDraggingServerId(null);
+                suppressClickUntilRef.current = Date.now() + 220;
+              }}
+            >
+              <Tooltip content={tooltipContent} side="right" popupClassName="px-2.5 py-2">
+                <Link
+                  className="sidebar-server-link"
+                  to={`/app/server/${server.id}`}
+                  onClick={(event) => {
+                    if (Date.now() < suppressClickUntilRef.current) {
+                      event.preventDefault();
+                      return;
+                    }
+                    setActiveServer(server.id);
+                  }}
                 >
-                  {active ? <span className="absolute -left-[11px] h-5 w-1 rounded-r-full bg-white" /> : null}
-                  <span className="relative grid h-11 w-11 place-items-center">
-                    {active ? (
-                      <span
-                        className="pointer-events-none absolute -inset-[4px] rounded-[18px] opacity-80 blur-[11px] transition-[background-color,box-shadow] duration-200"
-                        style={{
-                          backgroundColor: `rgba(${glowRgb}, 0.26)`,
-                          boxShadow: `0 0 22px rgba(${glowRgb}, 0.32)`,
-                        }}
-                      />
-                    ) : null}
-                    {server.icon_url ? (
-                      <img
-                        src={server.icon_url}
-                        alt={server.name}
-                        className={`relative z-10 block h-11 w-11 rounded-[14px] object-cover transition-[box-shadow,border-color] ${
-                          active ? "shadow-[0_8px_14px_rgba(0,0,0,0.42)]" : ""
-                        }`}
-                      />
-                    ) : (
-                      <span
-                        className={`relative z-10 grid h-11 w-11 place-items-center rounded-[14px] bg-black/20 text-[13px] font-semibold transition-[box-shadow,border-color] ${
-                          active ? "shadow-[0_8px_14px_rgba(0,0,0,0.42)]" : ""
-                        }`}
-                      >
-                        {server.name.slice(0, 2).toUpperCase()}
-                      </span>
-                    )}
+                  <motion.div
+                    className={serverItemBase}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    style={{ color: "var(--color-text-primary)" }}
+                  >
+                  <span
+                    className={`pointer-events-none absolute -left-[6px] top-1/2 z-20 w-[3px] -translate-y-1/2 rounded-r-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.55)] transition-all duration-200 ease-out ${
+                      active ? "h-8 opacity-100" : "h-2 opacity-0 group-hover:h-4 group-hover:opacity-100"
+                    }`}
+                  />
+                    <span className="sidebar-server-icon-shell relative grid h-10 w-10 place-items-center">
+                    <span
+                      className={`relative z-10 grid h-10 w-10 place-items-center overflow-hidden transition-all duration-200 ${
+                        active
+                          ? "rounded-2xl bg-[var(--color-bg-elevated)] shadow-[0_8px_16px_rgba(0,0,0,0.36)]"
+                          : "rounded-full bg-[rgba(255,255,255,0.02)] group-hover:rounded-2xl group-hover:bg-[rgba(255,255,255,0.06)]"
+                      }`}
+                    >
+                      {server.icon_url ? (
+                        <img src={server.icon_url} alt={server.name} className="block h-10 w-10 object-cover" />
+                      ) : (
+                        <span className="grid h-full w-full place-items-center text-[13px] font-semibold text-paw-text-secondary">
+                          {server.name.slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
                     {unreadCount > 0 ? (
                       <span className="pointer-events-none absolute -right-1.5 -top-1.5 z-[120] inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-[#2a2d35] bg-[#f23f43] px-1.5 text-[11px] font-bold leading-none text-white shadow-[0_2px_6px_rgba(0,0,0,0.55)]">
                         {unreadLabel}
                       </span>
                     ) : null}
                   </span>
-                </motion.div>
-              </Link>
-            </Tooltip>
+                  </motion.div>
+                </Link>
+              </Tooltip>
+            </Reorder.Item>
           );
         })}
-      </div>
+      </Reorder.Group>
     </aside>
   );
 };
