@@ -79,6 +79,9 @@ interface PawcordBridge {
   clipboard: {
     writeText: (text: string) => Promise<boolean>;
   };
+  shell: {
+    openExternal: (url: string) => Promise<boolean>;
+  };
   media: {
     listScreenSources: () => Promise<ScreenShareSource[]>;
     selectScreenSource: (sourceId: string | null) => Promise<boolean>;

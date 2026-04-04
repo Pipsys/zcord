@@ -95,6 +95,9 @@ const pawcordApi = {
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard:write-text", text) as Promise<boolean>,
   },
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke("shell:open-external", url) as Promise<boolean>,
+  },
   media: {
     listScreenSources: () => ipcRenderer.invoke("screen-share:list-sources") as Promise<ScreenShareSourcePayload[]>,
     selectScreenSource: (sourceId: string | null) => ipcRenderer.invoke("screen-share:select-source", sourceId) as Promise<boolean>,

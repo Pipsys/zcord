@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, Notification, session } from "electron";
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, Notification, session, shell } from "electron";
 import path from "node:path";
 import keytar from "keytar";
 
@@ -87,6 +87,23 @@ const getApiEndpoint = (): string => {
     return configured;
   }
   return isDev ? "http://localhost:8000/api/v1" : PROD_DEFAULT_API_URL;
+};
+
+const isExternalHttpUrl = (value: string): boolean => {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+const hasSameOrigin = (left: string, right: string): boolean => {
+  try {
+    return new URL(left).origin === new URL(right).origin;
+  } catch {
+    return false;
+  }
 };
 
 const toWebSocketOrigin = (origin: string): string => {
@@ -352,6 +369,27 @@ const createWindow = async (): Promise<void> => {
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isExternalHttpUrl(url)) {
+      return;
+    }
+
+    const currentUrl = mainWindow?.webContents.getURL() ?? "";
+    if (currentUrl && hasSameOrigin(url, currentUrl)) {
+      return;
+    }
+
+    event.preventDefault();
+    void shell.openExternal(url);
+  });
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.url.startsWith("file://")) {
       callback({ responseHeaders: details.responseHeaders });
@@ -537,6 +575,14 @@ ipcMain.handle("app:set-badge-count", (_event, value: number) => {
 });
 ipcMain.handle("clipboard:write-text", (_event, text: string) => {
   clipboard.writeText(text);
+  return true;
+});
+
+ipcMain.handle("shell:open-external", async (_event, url: string) => {
+  if (!isExternalHttpUrl(url)) {
+    return false;
+  }
+  await shell.openExternal(url);
   return true;
 });
 

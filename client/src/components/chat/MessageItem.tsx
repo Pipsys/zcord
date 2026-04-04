@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import { createPortal } from "react-dom";
@@ -56,6 +56,101 @@ const formatFileSize = (bytes: number): string => {
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const HTTP_LINK_RE = /https?:\/\/[^\s<]+/gi;
+
+const splitUrlAndTrailingPunctuation = (raw: string): { url: string; trailing: string } => {
+  let index = raw.length;
+  while (index > 0 && /[.,!?;:]/.test(raw[index - 1] ?? "")) {
+    index -= 1;
+  }
+  return {
+    url: raw.slice(0, index),
+    trailing: raw.slice(index),
+  };
+};
+
+const openExternalLink = (event: MouseEvent<HTMLAnchorElement>, href: string): void => {
+  if (!/^https?:\/\//i.test(href)) {
+    return;
+  }
+
+  event.preventDefault();
+  const openViaBridge = window.pawcord?.shell?.openExternal;
+  if (openViaBridge) {
+    void openViaBridge(href);
+    return;
+  }
+
+  window.open(href, "_blank", "noopener,noreferrer");
+};
+
+const linkifyText = (value: string): ReactNode[] => {
+  if (!value) {
+    return [value];
+  }
+
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let matchIndex = 0;
+
+  value.replace(HTTP_LINK_RE, (rawMatch, offset: number) => {
+    if (offset > cursor) {
+      nodes.push(value.slice(cursor, offset));
+    }
+
+    const { url, trailing } = splitUrlAndTrailingPunctuation(rawMatch);
+    let isValidUrl = false;
+    try {
+      const parsed = new URL(url);
+      isValidUrl = parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      isValidUrl = false;
+    }
+
+    if (isValidUrl) {
+      nodes.push(
+        <a
+          key={`msg-link-${offset}-${matchIndex}`}
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => openExternalLink(event, url)}
+          className="underline decoration-paw-accent/70 underline-offset-2 transition-colors hover:text-paw-text-primary"
+        >
+          {url}
+        </a>,
+      );
+      if (trailing.length > 0) {
+        nodes.push(trailing);
+      }
+    } else {
+      nodes.push(rawMatch);
+    }
+
+    cursor = offset + rawMatch.length;
+    matchIndex += 1;
+    return rawMatch;
+  });
+
+  if (cursor < value.length) {
+    nodes.push(value.slice(cursor));
+  }
+
+  return nodes;
+};
+
+const asDownloadHref = (value: string): string => {
+  try {
+    const parsed = new URL(value, window.location.href);
+    if (!parsed.pathname.includes("/api/v1/media/attachments/")) {
+      return value;
+    }
+    parsed.searchParams.set("download", "1");
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+};
 
 const hasMentionForCurrentUser = (content: string, userId: string | null, username: string | null): boolean => {
   if (!content || (!userId && !username)) {
@@ -186,7 +281,9 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
             ) : null}
 
             {parsed.normal ? (
-              <p className={`typo-message whitespace-pre-wrap break-words text-paw-text-secondary ${showAuthor ? "mt-0.5" : ""}`}>{parsed.normal}</p>
+              <p className={`typo-message whitespace-pre-wrap break-words text-paw-text-secondary ${showAuthor ? "mt-0.5" : ""}`}>
+                {linkifyText(parsed.normal)}
+              </p>
             ) : null}
 
             {parsed.code ? <pre className="mt-1 overflow-auto rounded-lg bg-black/45 p-2.5 font-mono text-xs text-paw-text-primary">{parsed.code}</pre> : null}
@@ -240,10 +337,11 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                   return (
                     <a
                       key={attachment.id}
-                      href={attachment.download_url}
+                      href={asDownloadHref(attachment.download_url)}
                       download={attachment.filename}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(event) => openExternalLink(event, asDownloadHref(attachment.download_url))}
                       className="flex min-w-[220px] max-w-[420px] items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2 hover:bg-white/10"
                     >
                       <div className="min-w-0">
@@ -314,10 +412,11 @@ export const MessageItem = ({ message, referencedMessage, showAuthor, onReply, o
                   <p className="truncate text-sm font-medium text-paw-text-secondary">{previewImage.filename}</p>
                   <div className="flex items-center gap-2">
                     <a
-                      href={previewImage.url}
+                      href={asDownloadHref(previewImage.url)}
                       download={previewImage.filename}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(event) => openExternalLink(event, asDownloadHref(previewImage.url))}
                       className="inline-flex items-center rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-paw-text-secondary transition hover:bg-white/15"
                     >
                       {t("message.image_download")}
