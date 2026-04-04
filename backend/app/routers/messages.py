@@ -173,7 +173,7 @@ async def _load_attachments(
             size_bytes=attachment.size_bytes,
             width=attachment.width,
             height=attachment.height,
-            download_url=media_service.presigned_download_url(attachment.minio_key),
+            download_url=media_service.attachment_url(attachment.id),
         )
         attachment_map.setdefault(attachment.message_id, []).append(payload)
     return attachment_map

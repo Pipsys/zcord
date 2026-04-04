@@ -337,6 +337,12 @@ class MediaService:
         encoded = quote(object_key, safe="/")
         return f"{self.public_api_base_url}{settings.api_prefix}/media/public/{encoded}"
 
+    def attachment_url(self, attachment_id: uuid.UUID, *, download: bool = False) -> str:
+        base = f"{self.public_api_base_url}{settings.api_prefix}/media/attachments/{attachment_id}"
+        if download:
+            return f"{base}?download=1"
+        return base
+
     def delete_object(self, object_key: str) -> None:
         if not object_key or "://" in object_key:
             return
