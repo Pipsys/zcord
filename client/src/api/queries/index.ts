@@ -175,6 +175,18 @@ export const useUpdateServerMutation = () => {
   });
 };
 
+export const useLeaveServerMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { serverId: string }) => del<void>(`/servers/${payload.serverId}/leave`),
+    onSuccess: (_, payload) => {
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+      void queryClient.invalidateQueries({ queryKey: ["channels", payload.serverId] });
+      void queryClient.invalidateQueries({ queryKey: ["server-members", payload.serverId] });
+    },
+  });
+};
+
 export const useUploadServerIconMutation = () => {
   const queryClient = useQueryClient();
   return useMutation({

@@ -331,3 +331,24 @@ async def delete_server(
     await session.delete(server)
     await session.commit()
     return None
+
+
+@router.delete("/{server_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
+async def leave_server(
+    server_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    server = await session.get(Server, server_id)
+    if server is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
+    if server.owner_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Server owner cannot leave server")
+
+    membership = await session.get(Member, {"server_id": server_id, "user_id": current_user.id})
+    if membership is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
+
+    await session.delete(membership)
+    await session.commit()
+    return None

@@ -391,30 +391,21 @@ export const ChannelList = ({
             <button
               type="button"
               onClick={onInvite}
-              className="h-7 rounded-md border border-white/15 bg-black/35 px-2.5 typo-meta font-semibold text-paw-text-secondary backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paw-accent/35"
+              className="server-hero-action-btn"
             >
               {t("server.invite_button")}
             </button>
-            {canManageServer ? (
-              <button
-                type="button"
-                title={t("server.settings_button")}
-                aria-label={t("server.settings_button")}
-                onClick={onOpenServerSettings}
-                className="channel-list-icon-btn channel-list-icon-btn--header"
-              >
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden>
-                  <path
-                    d="M10.325 4.317a1 1 0 0 1 1.35-.936l.887.355a1 1 0 0 0 .876-.03l.85-.425a1 1 0 0 1 1.325.486l.41.82a1 1 0 0 0 .687.53l.908.181a1 1 0 0 1 .79 1.16l-.15.914a1 1 0 0 0 .22.848l.602.704a1 1 0 0 1 0 1.302l-.602.704a1 1 0 0 0-.22.848l.15.914a1 1 0 0 1-.79 1.16l-.908.182a1 1 0 0 0-.687.53l-.41.82a1 1 0 0 1-1.325.486l-.85-.426a1 1 0 0 0-.876-.03l-.887.355a1 1 0 0 1-1.35-.936v-.955a1 1 0 0 0-.493-.863l-.83-.488a1 1 0 0 1-.366-1.366l.488-.83a1 1 0 0 0 0-1.006l-.488-.83a1 1 0 0 1 .366-1.366l.83-.488a1 1 0 0 0 .493-.863v-.955Z"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="12" cy="12" r="2.25" stroke="currentColor" strokeWidth="1.5" />
-                </svg>
-              </button>
-            ) : null}
+            <button
+              type="button"
+              title={t("server.settings_button")}
+              aria-label={t("server.settings_button")}
+              onClick={onOpenServerSettings}
+              className="server-hero-settings-btn"
+            >
+              <span className="server-hero-settings-glyph" aria-hidden>
+                ⚙
+              </span>
+            </button>
           </div>
         </div>
       </header>

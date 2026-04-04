@@ -337,6 +337,97 @@ body::before {
     color: var(--color-text-secondary);
   }
 
+  .server-hero-action-btn {
+    height: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    border-radius: 9px;
+    background: linear-gradient(180deg, rgba(22, 26, 34, 0.42), rgba(12, 15, 21, 0.48));
+    color: #eef2fa;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.015em;
+    backdrop-filter: blur(14px) saturate(145%);
+    -webkit-backdrop-filter: blur(14px) saturate(145%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 10px 20px rgba(0, 0, 0, 0.34);
+    transition:
+      border-color var(--motion-fast) ease,
+      background-color var(--motion-fast) ease,
+      color var(--motion-fast) ease,
+      transform var(--motion-fast) ease,
+      box-shadow var(--motion-fast) ease;
+  }
+
+  .server-hero-action-btn:hover {
+    border-color: rgba(255, 255, 255, 0.34);
+    background: linear-gradient(180deg, rgba(30, 36, 47, 0.56), rgba(16, 20, 28, 0.6));
+    color: #ffffff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 12px 22px rgba(0, 0, 0, 0.4);
+  }
+
+  .server-hero-action-btn:active {
+    transform: translateY(1px);
+  }
+
+  .server-hero-action-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.24);
+  }
+
+  .server-hero-settings-btn {
+    width: 32px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 9px;
+    background: linear-gradient(180deg, rgba(24, 28, 38, 0.44), rgba(12, 14, 20, 0.5));
+    color: #f0f3fb;
+    backdrop-filter: blur(14px) saturate(145%);
+    -webkit-backdrop-filter: blur(14px) saturate(145%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      0 10px 20px rgba(0, 0, 0, 0.36);
+    transition:
+      border-color var(--motion-fast) ease,
+      background-color var(--motion-fast) ease,
+      color var(--motion-fast) ease,
+      transform var(--motion-fast) ease,
+      box-shadow var(--motion-fast) ease;
+  }
+
+  .server-hero-settings-btn:hover {
+    border-color: rgba(255, 255, 255, 0.38);
+    background: linear-gradient(180deg, rgba(34, 40, 52, 0.62), rgba(16, 20, 28, 0.64));
+    color: #ffffff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 14px 24px rgba(0, 0, 0, 0.42);
+  }
+
+  .server-hero-settings-btn:active {
+    transform: translateY(1px);
+  }
+
+  .server-hero-settings-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.24);
+  }
+
+  .server-hero-settings-glyph {
+    display: inline-block;
+    font-size: 15px;
+    line-height: 1;
+    font-weight: 700;
+    transform: translateY(-0.5px);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+
   .channel-list-plus-glyph {
     font-size: 15px;
     font-weight: 600;

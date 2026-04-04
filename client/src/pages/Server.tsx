@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import {
   useChannelsQuery,
@@ -7,6 +7,7 @@ import {
   useCreateChannelMutation,
   useCreateMessageMutation,
   useDeleteServerIconMutation,
+  useLeaveServerMutation,
   useDeleteMessageMutation,
   useMessagesQuery,
   useServersQuery,
@@ -53,6 +54,7 @@ const compactPreview = (value: string): string => {
 const ServerPage = () => {
   const { t } = useI18n();
   const { serverId } = useParams();
+  const navigate = useNavigate();
   const { socket, voiceRoom, gatewayStatus, gatewayLatencyMs } = useRealtime();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const currentUsername = useAuthStore((state) => state.user?.username ?? null);
@@ -62,6 +64,7 @@ const ServerPage = () => {
   const [draftPreset, setDraftPreset] = useState<{ key: string; text: string; mode?: "replace" | "append" } | null>(null);
   const [pendingDeleteMessage, setPendingDeleteMessage] = useState<Message | null>(null);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
+  const [leaveServerConfirmOpen, setLeaveServerConfirmOpen] = useState(false);
   const [renameChannelTarget, setRenameChannelTarget] = useState<{ id: string; name: string; type: Channel["type"] } | null>(null);
   const [renameChannelDraft, setRenameChannelDraft] = useState("");
   const [serverNameDraft, setServerNameDraft] = useState("");
@@ -134,6 +137,7 @@ const ServerPage = () => {
   const createChannel = useCreateChannelMutation();
   const updateChannel = useUpdateChannelMutation();
   const updateServer = useUpdateServerMutation();
+  const leaveServer = useLeaveServerMutation();
   const uploadServerIcon = useUploadServerIconMutation();
   const deleteServerIcon = useDeleteServerIconMutation();
   const uploadServerBanner = useUploadServerBannerMutation();
@@ -455,10 +459,6 @@ const ServerPage = () => {
   };
 
   const openServerSettings = () => {
-    if (!canManageServer) {
-      pushToast(t("server.settings_forbidden"), "");
-      return;
-    }
     setServerNameDraft(currentServer?.name ?? "");
     setServerIconFile(null);
     setServerIconPreview(currentServer?.icon_url ?? null);
@@ -474,6 +474,7 @@ const ServerPage = () => {
     if (serverBannerPreview?.startsWith("blob:")) {
       URL.revokeObjectURL(serverBannerPreview);
     }
+    setLeaveServerConfirmOpen(false);
     setServerSettingsOpen(false);
     setServerIconFile(null);
     setServerIconPreview(null);
@@ -577,6 +578,28 @@ const ServerPage = () => {
       closeServerSettings();
     } catch (error) {
       pushToast(t("server.settings_save_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
+    }
+  };
+
+  const confirmLeaveServer = async () => {
+    if (!serverId || canManageServer) {
+      return;
+    }
+
+    try {
+      if (voiceRoom.connectedChannelId) {
+        await voiceRoom.leave();
+      }
+      await leaveServer.mutateAsync({ serverId });
+      setLeaveServerConfirmOpen(false);
+      closeServerSettings();
+      setActiveChannel(null);
+      setChannels([]);
+      setActiveServer(null);
+      navigate("/app/home");
+      pushToast(t("server.settings_leave_success_title"), t("server.settings_leave_success_desc"));
+    } catch (error) {
+      pushToast(t("server.settings_leave_failed_title"), error instanceof Error ? error.message : t("common.unknown_error"));
     }
   };
 
@@ -817,79 +840,107 @@ const ServerPage = () => {
 
       <Modal open={serverSettingsOpen} title={t("server.settings_title")} onClose={closeServerSettings}>
         <div className="space-y-4">
-          <div className="ui-surface flex items-center gap-3 bg-black/20 p-3 shadow-none">
-            <Avatar src={serverIconPreview ?? currentServer?.icon_url ?? null} label={currentServer?.name ?? "server"} size="lg" />
-            <div className="min-w-0 flex-1">
-              <p className="typo-body truncate font-semibold text-paw-text-secondary">{currentServer?.name ?? "Server"}</p>
-              <p className="typo-meta">{t("server.settings_icon_hint")}</p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
-                {t("server.settings_icon_upload")}
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/gif"
-                  className="hidden"
-                  onChange={(event) => handleSelectServerIcon(event.target.files?.[0] ?? null)}
+          {canManageServer ? (
+            <>
+              <div className="ui-surface flex items-center gap-3 bg-black/20 p-3 shadow-none">
+                <Avatar src={serverIconPreview ?? currentServer?.icon_url ?? null} label={currentServer?.name ?? "server"} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <p className="typo-body truncate font-semibold text-paw-text-secondary">{currentServer?.name ?? "Server"}</p>
+                  <p className="typo-meta">{t("server.settings_icon_hint")}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
+                    {t("server.settings_icon_upload")}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif"
+                      className="hidden"
+                      onChange={(event) => handleSelectServerIcon(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                  <Button
+                    className="bg-black/25 px-3 py-1.5 text-xs text-paw-text-secondary shadow-none hover:bg-black/35"
+                    onClick={() => void handleDeleteServerIcon()}
+                    disabled={deleteServerIcon.isPending || (!serverIconPreview && !currentServer?.icon_url)}
+                  >
+                    {t("server.settings_icon_delete")}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="ui-surface space-y-2 bg-black/20 p-3 shadow-none">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="typo-body font-semibold text-paw-text-secondary">{t("server.settings_banner_title")}</p>
+                    <p className="typo-meta">{t("server.settings_banner_hint")}</p>
+                  </div>
+                  <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
+                    {t("server.settings_banner_upload")}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif"
+                      className="hidden"
+                      onChange={(event) => handleSelectServerBanner(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                </div>
+                <div className="h-24 overflow-hidden rounded-lg border border-white/10 bg-black/25">
+                  {serverBannerPreview ?? currentServer?.banner_url ? (
+                    <img
+                      src={serverBannerPreview ?? currentServer?.banner_url ?? ""}
+                      alt={t("server.settings_banner_title")}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="grid h-full place-items-center text-xs text-paw-text-muted">{t("server.settings_banner_empty")}</div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("server.settings_name_label")}</label>
+                <Input
+                  value={serverNameDraft}
+                  onChange={(event) => setServerNameDraft(event.target.value)}
+                  placeholder={t("server.settings_name_placeholder")}
+                  className="popup-input"
+                  maxLength={100}
                 />
-              </label>
-              <Button
-                className="bg-black/25 px-3 py-1.5 text-xs text-paw-text-secondary shadow-none hover:bg-black/35"
-                onClick={() => void handleDeleteServerIcon()}
-                disabled={deleteServerIcon.isPending || (!serverIconPreview && !currentServer?.icon_url)}
-              >
-                {t("server.settings_icon_delete")}
-              </Button>
+              </div>
+            </>
+          ) : (
+            <div className="ui-surface bg-black/20 p-3 shadow-none">
+              <p className="typo-meta">{t("server.settings_forbidden")}</p>
             </div>
-          </div>
+          )}
 
           <div className="ui-surface space-y-2 bg-black/20 p-3 shadow-none">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="typo-body font-semibold text-paw-text-secondary">{t("server.settings_banner_title")}</p>
-                <p className="typo-meta">{t("server.settings_banner_hint")}</p>
-              </div>
-              <label className="cursor-pointer rounded-md border border-white/12 bg-black/25 px-3 py-1.5 text-xs font-semibold text-paw-text-secondary transition hover:border-white/20 hover:bg-black/35 hover:text-paw-text-primary">
-                {t("server.settings_banner_upload")}
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/gif"
-                  className="hidden"
-                  onChange={(event) => handleSelectServerBanner(event.target.files?.[0] ?? null)}
-                />
-              </label>
+            <p className="typo-body font-semibold text-paw-text-secondary">{t("server.settings_leave_title")}</p>
+            <p className="typo-meta">{canManageServer ? t("server.settings_leave_owner_blocked") : t("server.settings_leave_desc")}</p>
+            <div className="flex justify-end">
+              <Button
+                className="rounded-md border border-[#b3354b] bg-[#cc3d56] px-3 py-1.5 text-xs font-semibold text-white shadow-none transition hover:bg-[#db4a64] disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setLeaveServerConfirmOpen(true)}
+                disabled={leaveServer.isPending || canManageServer}
+              >
+                {t("server.settings_leave_button")}
+              </Button>
             </div>
-            <div className="h-24 overflow-hidden rounded-lg border border-white/10 bg-black/25">
-              {serverBannerPreview ?? currentServer?.banner_url ? (
-                <img
-                  src={serverBannerPreview ?? currentServer?.banner_url ?? ""}
-                  alt={t("server.settings_banner_title")}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="grid h-full place-items-center text-xs text-paw-text-muted">{t("server.settings_banner_empty")}</div>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-paw-text-muted">{t("server.settings_name_label")}</label>
-            <Input
-              value={serverNameDraft}
-              onChange={(event) => setServerNameDraft(event.target.value)}
-              placeholder={t("server.settings_name_placeholder")}
-              className="popup-input"
-              maxLength={100}
-            />
           </div>
 
           <div className="flex justify-end gap-2">
             <Button className="popup-btn-secondary px-3 py-1.5 text-xs shadow-none" onClick={closeServerSettings}>
               {t("message.cancel")}
             </Button>
-            <Button className="popup-btn-primary px-3 py-1.5 text-xs shadow-none" onClick={() => void saveServerSettings()} disabled={isSavingServerSettings}>
-              {isSavingServerSettings ? t("server.settings_saving") : t("server.settings_save")}
-            </Button>
+            {canManageServer ? (
+              <Button
+                className="popup-btn-primary px-3 py-1.5 text-xs shadow-none"
+                onClick={() => void saveServerSettings()}
+                disabled={isSavingServerSettings}
+              >
+                {isSavingServerSettings ? t("server.settings_saving") : t("server.settings_save")}
+              </Button>
+            ) : null}
           </div>
         </div>
       </Modal>
@@ -903,6 +954,17 @@ const ServerPage = () => {
         loading={deleteMessage.isPending}
         onCancel={() => setPendingDeleteMessage(null)}
         onConfirm={() => void confirmDeleteMessage()}
+      />
+
+      <ConfirmDialog
+        open={leaveServerConfirmOpen}
+        title={t("server.settings_leave_confirm_title")}
+        description={t("server.settings_leave_confirm_desc")}
+        confirmText={t("server.settings_leave_button")}
+        cancelText={t("message.cancel")}
+        loading={leaveServer.isPending}
+        onCancel={() => setLeaveServerConfirmOpen(false)}
+        onConfirm={() => void confirmLeaveServer()}
       />
     </div>
   );
