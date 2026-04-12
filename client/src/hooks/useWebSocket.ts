@@ -488,13 +488,26 @@ export const useWebSocket = (): UseWebSocketResult => {
       clearHeartbeat();
       setStatus(candidateIndex === 0 ? "connecting" : "reconnecting");
 
-      const meResponse = await window.pawcord.request<{ id: string }>({ method: "GET", path: "/users/me" });
-      const latestToken = await window.pawcord.auth.getToken();
+      let meResponse: { ok: boolean } | null = null;
+      let latestToken: string | null = null;
+      try {
+        meResponse = await window.pawcord.request<{ id: string }>({ method: "GET", path: "/users/me" });
+        latestToken = await window.pawcord.auth.getToken();
+      } catch {
+        if (disposed) {
+          return;
+        }
+        setStatus("reconnecting");
+        reconnectTimer = window.setTimeout(() => {
+          void connect();
+        }, 1_500);
+        return;
+      }
       if (latestToken && latestToken !== token) {
         useAuthStore.getState().setToken(latestToken);
         return;
       }
-      if (!meResponse.ok && !latestToken) {
+      if (!meResponse?.ok && !latestToken) {
         setSocket((current) => {
           current?.close();
           return null;

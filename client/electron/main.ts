@@ -784,43 +784,53 @@ ipcMain.handle("notify:show", async (_event, payload: { title: string; body: str
 });
 
 ipcMain.handle("api:request", async (_event, payload: { method: string; path: string; body?: unknown; headers?: Record<string, string> }) => {
-  let token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
-  const endpoint = getApiEndpoint();
-  const url = `${endpoint}${payload.path}`;
+  try {
+    let token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+    const endpoint = getApiEndpoint();
+    const url = `${endpoint}${payload.path}`;
 
-  const buildHeaders = (accessToken: string | null): Record<string, string> => ({
-    "Content-Type": "application/json",
-    ...(payload.headers ?? {}),
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-  });
+    const buildHeaders = (accessToken: string | null): Record<string, string> => ({
+      "Content-Type": "application/json",
+      ...(payload.headers ?? {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    });
 
-  const execute = async (accessToken: string | null) => fetch(url, {
-    method: payload.method,
-    headers: buildHeaders(accessToken),
-    body: payload.body ? JSON.stringify(payload.body) : undefined,
-  });
+    const execute = async (accessToken: string | null) => fetch(url, {
+      method: payload.method,
+      headers: buildHeaders(accessToken),
+      body: payload.body ? JSON.stringify(payload.body) : undefined,
+    });
 
-  let response = await execute(token);
-  let data = await parseJsonResponse(response);
+    let response = await execute(token);
+    let data = await parseJsonResponse(response);
 
-  if (response.status === 401 && shouldTryRefresh(payload.path)) {
-    const refreshed = await tryRefreshAccessToken(endpoint);
-    if (refreshed) {
-      token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
-      response = await execute(token);
-      data = await parseJsonResponse(response);
+    if (response.status === 401 && shouldTryRefresh(payload.path)) {
+      const refreshed = await tryRefreshAccessToken(endpoint);
+      if (refreshed) {
+        token = await keytar.getPassword(SERVICE_NAME, ACCESS_ACCOUNT_NAME);
+        response = await execute(token);
+        data = await parseJsonResponse(response);
+      }
     }
-  }
 
-  if (response.ok) {
-    await persistTokensFromPayload(data);
-  }
+    if (response.ok) {
+      await persistTokensFromPayload(data);
+    }
 
-  return {
-    ok: response.ok,
-    status: response.status,
-    data,
-  };
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 503,
+      data: {
+        detail: error instanceof Error ? error.message : "Network request failed",
+      },
+    };
+  }
 });
 
 ipcMain.handle(
